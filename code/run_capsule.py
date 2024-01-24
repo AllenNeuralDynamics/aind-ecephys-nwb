@@ -12,11 +12,17 @@ import probeinterface as pi
 
 from neo.rawio import OpenEphysBinaryRawIO
 
-from neuroconv.tools.spikeinterface import write_recording
+from neuroconv.tools.nwb_helpers import (
+    configure_backend,
+    get_default_backend_configuration,
+)
+from neuroconv.tools.spikeinterface import add_recording
 
 from pynwb import NWBHDF5IO, NWBFile
 from pynwb.file import Device, Subject
 from hdmf_zarr import NWBZarrIO
+
+from wavpack_numcodecs import WavPack
 
 from utils import get_devices_from_metadata
 
@@ -27,9 +33,17 @@ WRITE_LFP = True
 WRITE_RAW = True
 WRITE_NIDQ = False
 
+DEBUG = True
+
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
 lfp_sampling_rate = 2500
+
+# default compressors
+default_electrical_series_compressors = dict(
+    hdf5="gzip",
+    zarr=WavPack(level=3)
+)
 
 # default event line from open ephys
 data_folder = Path("../data/")
@@ -54,12 +68,12 @@ stub_seconds_group.add_argument('static_stub_seconds', nargs='?', default="10", 
 
 write_lfp_group = parser.add_mutually_exclusive_group()
 write_lfp_help = "Whether to write LFP electrical series"
-write_lfp_group.add_argument('--write-lfp', action='store_true', help=write_lfp_help)
+write_lfp_group.add_argument('--skip-lfp', action='store_true', help=write_lfp_help)
 write_lfp_group.add_argument('static_write_lfp', nargs='?', default="true", help=write_lfp_help)
 
 write_raw_group = parser.add_mutually_exclusive_group()
 write_raw_help = "Whether to write RAW electrical series"
-write_raw_group.add_argument('--write-raw', action='store_true', help=write_raw_help)
+write_raw_group.add_argument('--skip-raw', action='store_true', help=write_raw_help)
 write_raw_group.add_argument('static_write_raw', nargs='?', default="true", help=write_raw_help)
 
 write_nidq_group = parser.add_mutually_exclusive_group()
@@ -69,7 +83,7 @@ write_nidq_group.add_argument('static_write_nidq', nargs='?', default="false", h
 
 if __name__ == "__main__":
 
-    args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args()
 
     stub = args.stub or args.static_stub
     if args.stub:
@@ -77,12 +91,14 @@ if __name__ == "__main__":
     else:
         STUB_TEST = True if args.static_stub == "true" else False
     STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub)
-    if args.write_lfp:
-        WRITE_LFP = True
+
+    if args.skip_lfp:
+        WRITE_LFP = False
     else:
         WRITE_LFP = True if args.static_write_lfp == "true" else False
-    if args.write_raw:
-        WRITE_RAW = True
+
+    if args.skip_raw:
+        WRITE_RAW = False
     else:
         WRITE_RAW = True if args.static_write_raw == "true" else False
     if args.write_nidq:
@@ -148,8 +164,12 @@ if __name__ == "__main__":
         streams_to_process.append(stream_name)
     print(f"Number of streams to write: {len(streams_to_process)}")
 
+    if DEBUG:
+        streams_to_process = streams_to_process[:2]
+
     # Construct 1 nwb file per experiment - streams are concatenated!
     nwb_output_files = []
+    electrical_series_to_configure = []
     for block_index in range(num_blocks):
         experiment_name = experiment_names[block_index]
 
@@ -167,11 +187,14 @@ if __name__ == "__main__":
             nwbfile_output_path = results_folder / f"{nwbfile_out_name}{NWB_SUFFIX}"
 
             # copy nwbfile to output
-            shutil.copy(nwbfile_input_path, nwbfile_output_path)
+            # if NWB_BACKEND == "hdf5":
+            #    shutil.copy(nwbfile_input_path, nwbfile_output_path)
+            # else:
+            #    shutil.copytree(nwbfile_input_path, nwbfile_output_path)
             
             # write 1 new nwb file per segment
-            with io_class(nwbfile_output_path, "r+") as nwb_io:
-                nwbfile = nwb_io.read()
+            with io_class(str(nwbfile_input_path), "r") as read_io:
+                nwbfile = read_io.read()
             
                 for stream_name in streams_to_process:
                     record_node, oe_stream_name = stream_name.split("#")
@@ -254,14 +277,6 @@ if __name__ == "__main__":
                         )
                     )
 
-                    # TODO:
-                    # if WRITE_RAW or WRITE_LFP:
-                    #     # test set_data_io
-                    #     if NWBFORMAT == "hdf5":
-                    #         compression_kwargs = None
-                    #     else:
-                    #         compression_kwargs = None 
-
                     if WRITE_RAW:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}"
                         electrical_series_metadata = {
@@ -283,13 +298,14 @@ if __name__ == "__main__":
                             recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
 
                         print(f"\tAdding raw date for stream {stream_name} - segment {segment_index}")
-                        write_recording(
+                        add_recording(
                             recording=recording,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
+                            compression=None,
                             **add_electrical_series_kwargs,
                         )
-
+                        electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -346,15 +362,28 @@ if __name__ == "__main__":
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
-                        write_recording(
+                        add_recording(
                             recording=recording_lfp,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
+                            compression=None,
                             **add_electrical_lfp_series_kwargs,
                         )
+                        electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
+
                 print(f"Added {len(streams_to_process)} streams")
 
-                # and write
-                nwb_io.write(nwbfile)
+                print(f"Configuring {NWB_BACKEND} backend")
+                backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)  
+                es_compressor = default_electrical_series_compressors[NWB_BACKEND]
+
+                for key in backend_configuration.dataset_configurations.keys():
+                    if any([es_name in key for es_name in electrical_series_to_configure]) and "timestamps" not in key:
+                        backend_configuration.dataset_configurations[key].compression_method = es_compressor
+                        print(f"\tSetting compression for {key} to {es_compressor}")
+                configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
+
+                with io_class(str(nwbfile_output_path), "w") as export_io:
+                    export_io.export(src_io=read_io, nwbfile=nwbfile)
                 print(f"Done writing {nwbfile_output_path}")
                 nwb_output_files.append(nwbfile_output_path)
