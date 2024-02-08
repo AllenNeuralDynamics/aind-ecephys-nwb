@@ -1,5 +1,5 @@
 metadata_version: 1
-name: nwb-base-neuropixels
+name: NWB_Packaging_Neuropixels_Base_Capsule
 description: Basic structure of a capsule to be customized as needed.
 authors:
 - name: AIND
