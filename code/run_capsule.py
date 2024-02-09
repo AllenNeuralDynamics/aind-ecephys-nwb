@@ -352,7 +352,7 @@ if __name__ == "__main__":
                                 )
                             else:
                                 recording_lfp = se.read_openephys(
-                                    oe_folder, stream_name=lfp_stream, block_index=block_index
+                                    oe_folder, stream_name=lfp_stream_name, block_index=block_index
                                 )
                         # Assign to the correct channel group
                         recording_lfp.set_channel_groups([probe_device_name] * recording.get_num_channels())
