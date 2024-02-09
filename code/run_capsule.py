@@ -1,7 +1,5 @@
 """ Writes RAW ephys and LFP to an NWB file """
-import sys
 import argparse
-import shutil
 from pathlib import Path
 import numpy as np
 
@@ -212,7 +210,7 @@ if __name__ == "__main__":
                         for device_name, targeted_location in target_locations.items():
                             probe_no_spaces = device_name.replace(" ", "")
                             if probe_no_spaces in oe_stream_name:
-                                probe_device_name = probe_name
+                                probe_device_name = probe_no_spaces
                                 electrode_group_location = targeted_location
                                 print(f"Found device from rig: {probe_device_name}")
                                 break

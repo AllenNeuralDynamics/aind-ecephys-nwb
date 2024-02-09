@@ -2,6 +2,7 @@
 import json
 import warnings
 from pathlib import Path
+from packaging.version import parse
 
 from pynwb.file import Device
 
@@ -79,10 +80,9 @@ def get_devices_from_metadata(session_folder, segment_index=0):
                                     probe_device = Device(name=probe_device_name, 
                                                           description=probe_device_description,
                                                           manufacturer=probe_device_manufacturer)
-                                    if probe_device_name not in nwbfile.devices:
-                                        if added_devices is None:
-                                            added_devices = {}
-                                        added_devices[probe_device_name] = probe_device
+                                    if added_devices is None:
+                                        added_devices = {}
+                                    added_devices[probe_device_name] = probe_device
                                     devices_target_location[probe_device_name] = probe['primary_targeted_structure']
 
                                     # Add internal lasers for NP-opto
@@ -94,24 +94,24 @@ def get_devices_from_metadata(session_folder, segment_index=0):
                                             internal_laser_device = Device(name=laser_device_name,
                                                                            description=laser_device_description,
                                                                            manufacturer=laser_device_manufacturer)
-                                            if laser_device_name not in nwbfile.devices:
-                                                if added_devices is None:
-                                                    added_devices = {}
-                                                added_devices[laser_device_name] = internal_laser_device
-#                     # Add external lasers
-#                     if "laser_modules" in rig:
-#                         for laser in rig["laser_modules"][0]["lasers"]:
-#                             laser_device_name = laser["name"]
-#                             laser_device_description = f"Type: external - Wavelength: {laser['wavelength']}nm"
-#                             if "coupling" in laser:
-#                                 laser_device_description += f" - Coupling: {laser['coupling']}"
-#                             laser_device_manufacturer = laser['manufacturer'] # TODO get this info from rig.json
-#                             external_laser_device = Device(name=laser_device_name,
-#                                                            description=laser_device_description,
-#                                                            manufacturer=laser_device_manufacturer)
-#                             if laser_device_name not in nwbfile.devices:
-#                                 nwbfile.add_device(external_laser_device)
-#                                 added_devices.append(external_laser_device)
+                                            if added_devices is None:
+                                                added_devices = {}
+                                            added_devices[laser_device_name] = internal_laser_device
+
+                    # # TODO: Add external lasers should be added by other capsules
+                    # if "laser_modules" in rig:
+                    #     for laser in rig["laser_modules"][0]["lasers"]:
+                    #         laser_device_name = laser["name"]
+                    #         laser_device_description = f"Type: external - Wavelength: {laser['wavelength']}nm"
+                    #         if "coupling" in laser:
+                    #             laser_device_description += f" - Coupling: {laser['coupling']}"
+                    #         laser_device_manufacturer = laser['manufacturer'] # TODO get this info from rig.json
+                    #         external_laser_device = Device(name=laser_device_name,
+                    #                                        description=laser_device_description,
+                    #                                        manufacturer=laser_device_manufacturer)
+                    #       if added_devices is None:
+                    #           added_devices = {}
+                    #       added_devices[laser_device_name] = internal_laser_device
                                 
                                                 
 #                     else:
