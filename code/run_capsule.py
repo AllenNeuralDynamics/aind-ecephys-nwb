@@ -182,12 +182,6 @@ if __name__ == "__main__":
 
             nwbfile_output_path = results_folder / f"{nwbfile_out_name}{NWB_SUFFIX}"
 
-            # copy nwbfile to output
-            # if NWB_BACKEND == "hdf5":
-            #    shutil.copy(nwbfile_input_path, nwbfile_output_path)
-            # else:
-            #    shutil.copytree(nwbfile_input_path, nwbfile_output_path)
-            
             # write 1 new nwb file per segment
             with io_class(str(nwbfile_input_path), "r") as read_io:
                 nwbfile = read_io.read()
@@ -234,30 +228,7 @@ if __name__ == "__main__":
                     else:
                         recording_multi_segment = se.read_openephys(oe_folder, stream_name=stream_name, block_index=block_index)
 
-                    # Load synchronized timestamps and attach to recording
-                    recording_folder = oe_folder / record_node
-                    stream_folder = (
-                        recording_folder
-                        / experiment_name
-                        / recording_name
-                        / "continuous"
-                        / oe_stream_name
-                    )
-                    if (stream_folder / "sample_numbers.npy").is_file():
-                        # version>=v0.6
-                        sync_times = np.load(stream_folder / "timestamps.npy")
-                    else:
-                        # version<v0.6
-                        sync_times = np.load(stream_folder / "synchronized_timestamps.npy")
                     recording = si.split_recording(recording_multi_segment)[segment_index]
-
-                    if len(sync_times) == recording.get_num_samples():
-                        original_times = recording.get_times()
-                        recording.set_times(sync_times, with_warning=False)
-                    else:
-                        print(
-                            f"{recording_name}: mismatch between num samples ({recording.get_num_samples()}) and timestamps ({len(sync_times)})"
-                        )
 
                     electrode_metadata = dict(
                         Ecephys=dict(
@@ -293,7 +264,7 @@ if __name__ == "__main__":
                             end_frame = int(STUB_SECONDS * recording.sampling_frequency)
                             recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
 
-                        print(f"\tAdding raw date for stream {stream_name} - segment {segment_index}")
+                        print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
                         add_recording(
                             recording=recording,
                             nwbfile=nwbfile,
@@ -353,7 +324,7 @@ if __name__ == "__main__":
                                     oe_folder, stream_name=lfp_stream_name, block_index=block_index
                                 )
                         # Assign to the correct channel group
-                        recording_lfp.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                        recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
                         if STUB_TEST:
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)

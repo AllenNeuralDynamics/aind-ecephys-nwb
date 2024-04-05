@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-
+# Install from source until 0.4.9 release
+pip uninstall -y neuroconv
 git clone https://github.com/catalystneuro/neuroconv.git
 cd neuroconv
-git checkout 9d7d216c520dbfcc19fe269e5b9ad7944562ede3
+git checkout 6b7b654adf84ff7d68bca6ddc0b9f9d2f007224d
 pip install --ignore-installed --no-cache-dir .
 cd ..
