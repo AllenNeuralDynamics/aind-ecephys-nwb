@@ -109,7 +109,7 @@ if __name__ == "__main__":
     )
 
     # find ecephys session
-    sessions = [p.stem for p in data_folder.iterdir() if "ecephys" in p.stem and "sorted" not in p.stem]
+    sessions = [p.stem for p in data_folder.iterdir() if ("ecephys" in p.stem or "behavior" in p.stem) and "sorted" not in p.stem and "nwb" not in p.name]
     assert len(sessions) == 1, "Attach one session (raw data) data at a time"
     session = sessions[0]
     ecephys_raw_folder = data_folder / session
@@ -309,7 +309,6 @@ if __name__ == "__main__":
                                     + lfp_period / 2
                                 )
                                 recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
-                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_folder_name}-LFP")
                         else:
                             # load LFP recording for NP1.0 probes
                             lfp_stream_name = stream_name.replace("AP", "LFP")
@@ -328,6 +327,10 @@ if __name__ == "__main__":
                         if STUB_TEST:
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
+
+                        # For NP2, save the LFP to speed up conversion later
+                        if "AP" not in stream_name:
+                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_folder_name}-LFP")
 
                         add_recording(
                             recording=recording_lfp,
