@@ -20,8 +20,8 @@ from pynwb import NWBHDF5IO, NWBFile
 from pynwb.file import Device, Subject
 from hdmf_zarr import NWBZarrIO
 
-from wavpack_numcodecs import WavPack
-
+# for NWB Zarr, let's use built-in compressors, so thay can be read without Python
+from numcodecs import Blosc
 from utils import get_devices_from_metadata
 
 # hdf5 or zarr
@@ -40,7 +40,7 @@ lfp_sampling_rate = 2500
 # default compressors
 default_electrical_series_compressors = dict(
     hdf5="gzip",
-    zarr=WavPack(level=3)
+    zarr=Blosc(cname="zstd", clevel=9, shuffle=Blosc.BITSHUFFLE)
 )
 
 # default event line from open ephys
@@ -175,7 +175,7 @@ if __name__ == "__main__":
         for segment_index in range(num_segments):
             recording_name = f"recording{segment_index+1}"
 
-            nwbfile_out_name = f"{session}_{experiment_name}_{recording_name}"
+            nwbfile_out_name = f"{session}_{experiment_name}_experiment_name"
 
             if STUB_TEST:
                 nwbfile_out_name = f"{nwbfile_out_name}_stub"
