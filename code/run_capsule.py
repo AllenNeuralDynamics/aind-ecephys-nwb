@@ -150,6 +150,9 @@ if __name__ == "__main__":
     record_nodes = list(neo_io.folder_structure.keys())
     experiment_ids = [eid for eid in neo_io.folder_structure[record_nodes[0]]["experiments"].keys()]
     experiment_names = [e["name"] for eid, e in neo_io.folder_structure[record_nodes[0]]["experiments"].items()]
+    recording_names = [
+        r["name"] for rid, r in neo_io.folder_structure[record_nodes[0]]["experiments"][experiment_ids[0]]["recordings"].items()
+    ]
 
     streams_to_process = []
     for stream_name in stream_names:
@@ -173,7 +176,7 @@ if __name__ == "__main__":
 
         num_segments = neo_io.segment_count(block_index)
         for segment_index in range(num_segments):
-            recording_name = f"recording{segment_index+1}"
+            recording_name = recording_names[segment_index]
 
             nwbfile_out_name = f"{session}_{experiment_name}_experiment_name"
 
