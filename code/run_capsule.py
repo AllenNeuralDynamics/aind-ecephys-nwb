@@ -349,7 +349,7 @@ if __name__ == "__main__":
                                 reference_channel_ids = channel_ids[reference_channel_indices]
                                 groups = [[channel_id] for channel_id in reference_channel_ids]
                                 # common median reference to channels out of brain
-                                recording_lfp = spre.CommonReferenceRecording(recording_lfp, reference="single", groups=groups,
+                                recording_lfp = spre.common_reference(recording_lfp, reference="single", groups=groups,
                                                                                 ref_channel_ids=reference_channel_ids)
 
                         # spatial subsampling from allensdk - keep every nth channel
@@ -360,13 +360,13 @@ if __name__ == "__main__":
                         ), f"Mismatch when downsampling spatially. Got {recording_lfp_spatial_subsampled.get_num_channels()} number of channels given {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR} channel stride and {recording_lfp.get_num_channels()} original channels"
                         
                         # time subsampling/decimate
-                        recording_lfp = spre.ResampleRecording(recording_lfp_spatial_subsampled, 
+                        recording_lfp = spre.resample(recording_lfp_spatial_subsampled, 
                                                                 int(recording_lfp.sampling_frequency / TEMPORAL_SUBSAMPLING_FACTOR))
                         assert(recording_lfp.get_num_samples() == int(recording_lfp_spatial_subsampled.get_num_samples() / TEMPORAL_SUBSAMPLING_FACTOR)
                         ), f"Mismatch when downsampling temporally. Got {recording_lfp.get_num_samples()} samples given {TEMPORAL_SUBSAMPLING_FACTOR} factor and {recording_lfp_spatial_subsampled.get_num_samples()} original samples"
                         
                         # high pass filter from allensdk
-                        recording_lfp = spre.HighpassFilterRecording(recording_lfp, freq_min=0.1)
+                        recording_lfp = spre.highpass_filter(recording_lfp, freq_min=0.1)
 
                         # Assign to the correct channel group
                         recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
