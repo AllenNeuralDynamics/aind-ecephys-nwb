@@ -29,7 +29,7 @@ from utils import get_devices_from_metadata
 STUB_TEST = False
 STUB_SECONDS = 10
 WRITE_LFP = True
-WRITE_RAW = False
+WRITE_RAW = True
 WRITE_NIDQ = False
 
 DEBUG = True
@@ -45,9 +45,9 @@ default_electrical_series_compressors = dict(
 )
 
 # default event line from open ephys
-data_folder = Path("/data/")
-scratch_folder = Path("/scratch/")
-results_folder = Path("/results/")
+data_folder = Path("../data/")
+scratch_folder = Path("../scratch/")
+results_folder = Path("../results/")
 
 job_kwargs = dict(n_jobs=-1, progress_bar=True)
 si.set_global_job_kwargs(**job_kwargs)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     ecephys_raw_folder = data_folder / session
 
     # find base NWB file
-    nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb_") or p.name.endswith(".nwb.zarr")]
+    nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
     assert len(nwb_files) == 1, "Attach one base NWB file data at a time"
     nwbfile_input_path = nwb_files[0]
 
