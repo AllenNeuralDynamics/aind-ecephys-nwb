@@ -308,7 +308,6 @@ if __name__ == "__main__":
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
                             recording_lfp = spre.scale(recording_lfp, dtype="int16")
-                            spre.highpass_filter(recording)
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
