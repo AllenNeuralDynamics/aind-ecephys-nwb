@@ -80,12 +80,25 @@ write_nidq_help = "Whether to write NIDQ stream"
 write_nidq_group.add_argument('--write-nidq', action='store_true', help=write_nidq_help)
 write_nidq_group.add_argument('static_write_nidq', nargs='?', default="false", help=write_nidq_help)
 
-lfp_subsampling_args = parser.add_mutually_exclusive_group()
-lfp_subsampling_args.add_argument('--temporal_factor', default=2, help='Ratio of input samples to output samples in time')
-lfp_subsampling_args.add_argument('--spatial_factor', default=4, help='Distance between channels to keep')
+lfp_temporal_subsampling_group = parser.add_mutually_exclusive_group()
+lfp_temporal_subsampling_help = "Ratio of input samples to output samples in time "
+lfp_temporal_subsampling_group.add_argument('--lfp_temporal_factor', action='store_true', help=lfp_temporal_subsampling_help)
+lfp_temporal_subsampling_group.add_argument('static_lfp_temporal_factor', nargs='?', default="2", help=lfp_temporal_subsampling_help)
+
+lfp_spatial_subsampling_group = parser.add_mutually_exclusive_group()
+lfp_spatial_subsampling_help = "Distance between channels to keep"
+lfp_spatial_subsampling_group.add_argument('--lfp_spatial_factor', action='store_true', help=lfp_spatial_subsampling_help)
+lfp_spatial_subsampling_group.add_argument('static_lfp_spatial_factor', nargs='?', default="4", help=lfp_spatial_subsampling_help)
+
 # common median referencing for probes in agar
-lfp_subsampling_args.add_argument('--surface_channel_agar_probes_indices', help='Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as dict where key is probe and value is surface channel (e.g. """{"ProbeA": 350}"""', 
+lfp_surface_channel_agar_group = parser.add_mutually_exclusive_group()
+lfp_surface_channel_agar_group.add_argument('--surface_channel_agar_probes_indices', help='Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as dict where key is probe and value is surface channel (e.g. """{"ProbeA": 350}"""', 
                                     type=str)
+
+lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
+lfp_highpass_filter_help = "Cutoff frequency for highpass filter"
+lfp_highpass_filter_group.add_argument('--lfp_highpass_freq_min', action='store_true', help=lfp_highpass_filter_help)
+lfp_highpass_filter_group.add_argument('static_lfp_highpass_freq_min', nargs='?', default="0.1", help=lfp_highpass_filter_help)
 
 if __name__ == "__main__":
 
@@ -112,9 +125,9 @@ if __name__ == "__main__":
     else:
         WRITE_NIDQ = True if args.static_write_nidq == "true" else False
 
-    TEMPORAL_SUBSAMPLING_FACTOR = args.temporal_factor
-    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = args.spatial_factor
-
+    TEMPORAL_SUBSAMPLING_FACTOR = int(args.lfp_temporal_factor) or int(args.static_lfp_temporal_factor)
+    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(args.lfp_spatial_factor) or int(args.static_lfp_spatial_factor)
+    HIGHPASS_FILTER_FREQ_MIN = float(args.lfp_highpass_freq_min) or float(args.static_lfp_highpass_freq_min)
     print(
         f"Stub test: {STUB_TEST} - Stub seconds: {STUB_SECONDS} -  Write lfp: {WRITE_LFP} - Write raw: {WRITE_RAW} - Write NIDQ: {WRITE_NIDQ}"
     )
@@ -353,20 +366,18 @@ if __name__ == "__main__":
                                                                                 ref_channel_ids=reference_channel_ids)
 
                         # spatial subsampling from allensdk - keep every nth channel
-                        channel_ids_to_keep = channel_ids[0:len(channel_ids):SPATIAL_CHANNEL_SUBSAMPLING_FACTOR] 
-                        channel_ids_to_remove = [channel_id for channel_id in channel_ids if channel_id not in channel_ids_to_keep]
-                        recording_lfp_spatial_subsampled = recording_lfp.remove_channels(channel_ids_to_remove)
+                        channel_ids_to_keep = channel_ids[0:len(channel_ids):SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
+                        recording_lfp_spatial_subsampled = recording_lfp.channel_slice(channel_ids_to_keep)
                         assert (recording_lfp_spatial_subsampled.get_num_channels() == int(recording_lfp.get_num_channels() / SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
                         ), f"Mismatch when downsampling spatially. Got {recording_lfp_spatial_subsampled.get_num_channels()} number of channels given {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR} channel stride and {recording_lfp.get_num_channels()} original channels"
                         
                         # time subsampling/decimate
-                        recording_lfp = spre.resample(recording_lfp_spatial_subsampled, 
-                                                                int(recording_lfp.sampling_frequency / TEMPORAL_SUBSAMPLING_FACTOR))
-                        assert(recording_lfp.get_num_samples() == int(recording_lfp_spatial_subsampled.get_num_samples() / TEMPORAL_SUBSAMPLING_FACTOR)
+                        recording_lfp = spre.decimate(recording_lfp_spatial_subsampled, TEMPORAL_SUBSAMPLING_FACTOR)
+                        assert(recording_lfp.get_num_samples() == np.ceil(recording_lfp_spatial_subsampled.get_num_samples() / TEMPORAL_SUBSAMPLING_FACTOR)
                         ), f"Mismatch when downsampling temporally. Got {recording_lfp.get_num_samples()} samples given {TEMPORAL_SUBSAMPLING_FACTOR} factor and {recording_lfp_spatial_subsampled.get_num_samples()} original samples"
                         
                         # high pass filter from allensdk
-                        recording_lfp = spre.highpass_filter(recording_lfp, freq_min=0.1)
+                        recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
 
                         # Assign to the correct channel group
                         recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
