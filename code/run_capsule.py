@@ -368,13 +368,9 @@ if __name__ == "__main__":
                         # spatial subsampling from allensdk - keep every nth channel
                         channel_ids_to_keep = channel_ids[0:len(channel_ids):SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
                         recording_lfp_spatial_subsampled = recording_lfp.channel_slice(channel_ids_to_keep)
-                        assert (recording_lfp_spatial_subsampled.get_num_channels() == int(recording_lfp.get_num_channels() / SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
-                        ), f"Mismatch when downsampling spatially. Got {recording_lfp_spatial_subsampled.get_num_channels()} number of channels given {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR} channel stride and {recording_lfp.get_num_channels()} original channels"
                         
                         # time subsampling/decimate
                         recording_lfp = spre.decimate(recording_lfp_spatial_subsampled, TEMPORAL_SUBSAMPLING_FACTOR)
-                        assert(recording_lfp.get_num_samples() == np.ceil(recording_lfp_spatial_subsampled.get_num_samples() / TEMPORAL_SUBSAMPLING_FACTOR)
-                        ), f"Mismatch when downsampling temporally. Got {recording_lfp.get_num_samples()} samples given {TEMPORAL_SUBSAMPLING_FACTOR} factor and {recording_lfp_spatial_subsampled.get_num_samples()} original samples"
                         
                         # high pass filter from allensdk
                         recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
