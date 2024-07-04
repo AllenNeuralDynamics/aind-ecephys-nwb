@@ -10,10 +10,10 @@ COPY git-askpass /
 
 RUN pip install -U --no-cache-dir \
     hdmf-zarr==0.6.0 \
-    neuroconv==0.4.8 \
+    neuroconv==0.4.9 \
     nwbwidgets==0.11.3 \
     pynwb==2.6.0 \
-    spikeinterface[full,widgets]==0.100.4 \
+    spikeinterface[full,widgets]==0.100.8 \
     wavpack-numcodecs==0.1.5
 
 COPY postInstall /
