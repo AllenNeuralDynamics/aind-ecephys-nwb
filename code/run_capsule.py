@@ -403,14 +403,12 @@ if __name__ == "__main__":
                             if probe.name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
                                 surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe.name]
                                 # get indices of channels out of brain including surface channel
-                                reference_channel_indices = np.arange(surface_channel_index, len(channel_ids), 1)
+                                reference_channel_indices = np.arange(surface_channel_index, len(channel_ids))
                                 reference_channel_ids = channel_ids[reference_channel_indices]
-                                groups = [[channel_id] for channel_id in reference_channel_ids]
                                 # common median reference to channels out of brain
                                 recording_lfp = spre.common_reference(
                                     recording_lfp,
-                                    reference="single",
-                                    groups=groups,
+                                    reference="global",
                                     ref_channel_ids=reference_channel_ids,
                                 )
 
