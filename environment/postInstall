@@ -2,9 +2,9 @@
 set -e
 
 # Install from source until 0.4.9 release
-pip uninstall -y neuroconv
-git clone https://github.com/catalystneuro/neuroconv.git
-cd neuroconv
-git checkout 6b7b654adf84ff7d68bca6ddc0b9f9d2f007224d
+pip uninstall -y spikeinterface
+git clone https://github.com/SpikeInterface/spikeinterface.git
+cd spikeinterface
+git checkout 1a101590ab32559e2af06edd67f2199df0b17112
 pip install --ignore-installed --no-cache-dir .
 cd ..
