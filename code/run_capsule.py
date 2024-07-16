@@ -25,14 +25,6 @@ from hdmf_zarr import NWBZarrIO
 from numcodecs import Blosc
 from utils import get_devices_from_metadata
 
-# hdf5 or zarr
-STUB_TEST = False
-STUB_SECONDS = 10
-WRITE_LFP = True
-WRITE_RAW = True
-WRITE_NIDQ = False
-
-DEBUG = True
 
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
@@ -222,9 +214,6 @@ if __name__ == "__main__":
             continue
         streams_to_process.append(stream_name)
     print(f"Number of streams to write: {len(streams_to_process)}")
-
-    if DEBUG:
-        streams_to_process = streams_to_process[:2]
 
     # Construct 1 nwb file per experiment - streams are concatenated!
     nwb_output_files = []
