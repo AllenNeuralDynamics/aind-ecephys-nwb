@@ -4,47 +4,43 @@
 
 ### Description
 
-This capsule is designed to append device, electrodes, and electrical series (raw and LFP) information to an existing NWB file.
+This capsule is designed to append device, electrodes, LFP and raw (optional) electrical series information to an existing NWB file.
 
 
 ### Inputs
 
-The `data/` folder must include the session dataset and optionally the following JSON files:
+The `data/` folder must include:
 
-- `subject.json`: Subject information following the [aind-data-schema]() specification
-- `data_description.json`: session information following the [aind-data-schema]() specification
+- a base valid NWB file to append the ephys data to
+- the raw data
+- (optional) a list of json files produced by the [aind-ephys-job-dispatch]() process
 
-The `data_description.json` is only used to access the `name` field, which is used as session name.
-An minimal example `data_description.json` file:
-
-```json
-{
-    "name": "my-awesome-session-name"
-}
-```
-
-If these files are missing, a mock NWB file is created.
-
-If the `data/` folder includes an NWB file, this is copied to the results folder.
-
+If no JSON files are provided, the capsule will assume the raw data is in the [AIND
+ephys format](https://github.com/AllenNeuralDynamics/aind-physio-arch/blob/main/doc/file_formats/ephys.md). When JSON files are provided, the capsule will use this information 
+to load the raw and LFP data.
 
 ### Parameters
 
-The `code/run` script takes 2 arguments:
+The `code/run` script takes the following arguments:
 
 ```bash
-  --backend {hdf5,zarr}
-                        NWB backend. It can be either 'hdf5' or 'zarr'.
-  --asset-name ASSET_NAME
-                        Path to the data asset of the session. When provided, the metadata are fetched from the AIND metadata database. If None, and the attached data asset is used to fetch relevant metadata.
+  --stub                Write a stub version for testing
+  --stub-seconds STUB_SECONDS
+                        Duration of stub recording
+  --skip-lfp            Whether to write LFP electrical series
+  --write-raw           Whether to write RAW electrical series
+  --write-nidq          Whether to write NIDQ stream
+  --lfp_temporal_factor LFP_TEMPORAL_FACTOR
+                        Ratio of input samples to output samples in time. Use 0 or 1 to keep all samples. Default is 2.
+  --lfp_spatial_factor LFP_SPATIAL_FACTOR
+                        Controls number of channels to skip in spatial subsampling. Use 0 or 1 to keep all channels. Default is 4.
+  --lfp_highpass_freq_min LFP_HIGHPASS_FREQ_MIN
+                        Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1 Hz. Use 0 to skip filtering.
+  --surface_channel_agar_probes_indices SURFACE_CHANNEL_AGAR_PROBES_INDICES
+                        Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as JSON
+                        string where key is probe and value is surface channel (e.g. "{'ProbeA': 350, 'ProbeB': 360}")
 ```
-
-The `--asset-name` input is only used at AIND to fetch metadata from the database.
-
 
 ### Output
 
-The output of this capsule is a NWB file in the `results/` folder named:
-`{session_name}.nwb`
-
-In case the `data/` folder contains a single NWB file, this is copied to the `results` with the same name.
+The output of this capsule is a set of NWB files in the `results/` folder named associated with different experiments/blocks and segments.
