@@ -44,7 +44,7 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-job_kwargs = dict(n_jobs=-1, progress_bar=True)
+job_kwargs = dict(n_jobs=-1, progress_bar=False)
 si.set_global_job_kwargs(**job_kwargs)
 
 
@@ -527,7 +527,7 @@ if __name__ == "__main__":
 
                         # For NP2, save the LFP to speed up conversion later
                         if "AP" not in stream_name:
-                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_folder_name}-LFP")
+                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_name}-LFP")
 
                         print(f"\tAdding LFP data for stream {stream_name} - segment {segment_index}")
                         add_recording(
