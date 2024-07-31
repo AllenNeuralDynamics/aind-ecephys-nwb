@@ -225,7 +225,7 @@ if __name__ == "__main__":
         for segment_index in range(num_segments):
             recording_name = recording_names[segment_index]
 
-            nwbfile_out_name = f"{session}_{experiment_name}_experiment_name"
+            nwbfile_out_name = f"{session}_{experiment_name}_{recording_name}"
 
             if STUB_TEST:
                 nwbfile_out_name = f"{nwbfile_out_name}_stub"
