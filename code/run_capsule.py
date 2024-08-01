@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 import numpy as np
+import os
 import json
 
 import spikeinterface as si
@@ -15,7 +16,10 @@ from neuroconv.tools.nwb_helpers import (
     configure_backend,
     get_default_backend_configuration,
 )
-from neuroconv.tools.spikeinterface import add_recording
+from neuroconv.tools.spikeinterface import (
+    add_recording,
+    add_electrodes,
+)
 
 from pynwb import NWBHDF5IO
 from pynwb.file import Device
@@ -30,7 +34,6 @@ STUB_TEST = False
 STUB_SECONDS = 10
 WRITE_LFP = True
 WRITE_RAW = True
-WRITE_NIDQ = False
 
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
@@ -45,6 +48,7 @@ scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
 job_kwargs = dict(n_jobs=-1, progress_bar=False)
+n_jobs = os.cpu_count()
 si.set_global_job_kwargs(**job_kwargs)
 
 
@@ -69,11 +73,6 @@ write_raw_group = parser.add_mutually_exclusive_group()
 write_raw_help = "Whether to write RAW electrical series"
 write_raw_group.add_argument("--write-raw", action="store_true", help=write_raw_help)
 write_raw_group.add_argument("static_write_raw", nargs="?", default="false", help=write_raw_help)
-
-write_nidq_group = parser.add_mutually_exclusive_group()
-write_nidq_help = "Whether to write NIDQ stream"
-write_nidq_group.add_argument("--write-nidq", action="store_true", help=write_nidq_help)
-write_nidq_group.add_argument("static_write_nidq", nargs="?", default="false", help=write_nidq_help)
 
 lfp_temporal_subsampling_group = parser.add_mutually_exclusive_group()
 lfp_temporal_subsampling_help = (
@@ -121,15 +120,10 @@ if __name__ == "__main__":
     else:
         WRITE_LFP = True if args.static_write_lfp == "true" else False
 
-    if args.write_nidq:
+    if args.write_raw:
         WRITE_RAW = False
     else:
         WRITE_RAW = True if args.static_write_raw == "true" else False
-
-    if args.write_nidq:
-        WRITE_NIDQ = True
-    else:
-        WRITE_NIDQ = True if args.static_write_nidq == "true" else False
 
     TEMPORAL_SUBSAMPLING_FACTOR = args.static_lfp_temporal_factor or args.lfp_temporal_factor
     TEMPORAL_SUBSAMPLING_FACTOR = int(TEMPORAL_SUBSAMPLING_FACTOR)
@@ -150,7 +144,6 @@ if __name__ == "__main__":
     print(f"Stub seconds: {STUB_SECONDS}")
     print(f"Write LFP: {WRITE_LFP}")
     print(f"Write RAW: {WRITE_RAW}")
-    print(f"Write NIDQ: {WRITE_NIDQ}")
     print(f"Temporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
     print(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
     print(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
@@ -252,8 +245,8 @@ if __name__ == "__main__":
 
     streams_to_process = []
     for stream_name in stream_names:
-        # Skip NI-DAQ if WRITE_NIDQ is False
-        if "NI-DAQ" in stream_name and not WRITE_NIDQ:
+        # Skip NI-DAQ
+        if "NI-DAQ" in stream_name:
             continue
         # LFP are handled later
         if "LFP" in stream_name:
@@ -412,6 +405,8 @@ if __name__ == "__main__":
                         )
                     )
 
+                    # Add channel properties (group_name property to associate electrodes with group)
+                    recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
                     if WRITE_RAW:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}"
                         electrical_series_metadata = {
@@ -424,8 +419,6 @@ if __name__ == "__main__":
                         add_electrical_series_kwargs = dict(
                             es_key=f"ElectricalSeries{probe_device_name}", write_as="raw"
                         )
-                        # Add channel properties (group_name property to associate electrodes with group)
-                        recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
 
                         if STUB_TEST:
                             end_frame = int(STUB_SECONDS * recording.sampling_frequency)
@@ -440,6 +433,13 @@ if __name__ == "__main__":
                             **add_electrical_series_kwargs,
                         )
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
+                    else:
+                        # always add recording electrodes, as they will be used by Units
+                        add_electrodes(
+                            recording=recording,
+                            nwbfile=nwbfile,
+                            metadata=electrode_metadata
+                        )
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -482,8 +482,10 @@ if __name__ == "__main__":
                                     + lfp_period / 2
                                 )
                                 recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
+                            save_to_binary = True
                         else:
                             print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
+                            save_to_binary = False
                         channel_ids = recording_lfp.get_channel_ids()
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
@@ -525,11 +527,12 @@ if __name__ == "__main__":
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
-                        # For NP2, save the LFP to speed up conversion later
-                        if "AP" not in stream_name:
-                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_name}-LFP")
+                        # For streams without a separate LFP, save to binary to speed up conversion later
+                        if save_to_binary:
+                            print(f"\tSaving preprocessed LFP to binary")
+                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_name}-LFP", verbose=False)
 
-                        print(f"\tAdding LFP data for stream {stream_name} - segment {segment_index}")
+                        print(f"\tAdding LFP recording {recording_lfp}")
                         add_recording(
                             recording=recording_lfp,
                             nwbfile=nwbfile,
@@ -543,15 +546,21 @@ if __name__ == "__main__":
 
                 print(f"Configuring {NWB_BACKEND} backend")
                 backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)
-                # es_compressor = default_electrical_series_compressors[NWB_BACKEND]
+                es_compressor = default_electrical_series_compressors[NWB_BACKEND]
 
-                # for key in backend_configuration.dataset_configurations.keys():
-                #     if any([es_name in key for es_name in electrical_series_to_configure]) and "timestamps" not in key:
-                #         backend_configuration.dataset_configurations[key].compression_method = es_compressor
-                #         print(f"\tSetting compression for {key} to {es_compressor}")
+                for key in backend_configuration.dataset_configurations.keys():
+                    if any([es_name in key for es_name in electrical_series_to_configure]) \
+                        and "timestamps" not in key:
+                        backend_configuration.dataset_configurations[key].compression_method = es_compressor
+                        print(f"\tSetting compression for {key} to {es_compressor}")
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
                 print(f"Writing NWB file to {nwbfile_output_path}")
+                # if NWB_BACKEND == "zarr":
+                #     export_kwargs = {"number_of_jobs": n_jobs}
+                # else:
+                #    export_kwargs = {}
+                # TODO: enable parallel write
                 with io_class(str(nwbfile_output_path), "w") as export_io:
                     export_io.export(src_io=read_io, nwbfile=nwbfile)
                 print(f"Done writing {nwbfile_output_path}")

@@ -29,7 +29,6 @@ The `code/run` script takes the following arguments:
                         Duration of stub recording
   --skip-lfp            Whether to write LFP electrical series
   --write-raw           Whether to write RAW electrical series
-  --write-nidq          Whether to write NIDQ stream
   --lfp_temporal_factor LFP_TEMPORAL_FACTOR
                         Ratio of input samples to output samples in time. Use 0 or 1 to keep all samples. Default is 2.
   --lfp_spatial_factor LFP_SPATIAL_FACTOR
