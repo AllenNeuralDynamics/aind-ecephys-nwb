@@ -38,7 +38,7 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-job_kwargs = dict(n_jobs=-1, progress_bar=True)
+job_kwargs = dict(n_jobs=-1, progress_bar=False)
 si.set_global_job_kwargs(**job_kwargs)
 
 
@@ -423,7 +423,9 @@ if __name__ == "__main__":
 
                         # For NP2, save the LFP to speed up conversion later
                         if "AP" not in stream_name:
-                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_folder_name}-LFP")
+                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_folder_name}-LFP", verbose=False)
+
+                        print(f"\t{recording_lfp}")
 
                         add_recording(
                             recording=recording_lfp,
@@ -446,7 +448,12 @@ if __name__ == "__main__":
                         print(f"\tSetting compression for {key} to {es_compressor}")
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
+                if NWB_BACKEND == "zarr":
+                    write_args = {'link_data': False}
+                else:
+                    write_args = {}
+
                 with io_class(str(nwbfile_output_path), "w") as export_io:
-                    export_io.export(src_io=read_io, nwbfile=nwbfile)
+                    export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
                 print(f"Done writing {nwbfile_output_path}")
                 nwb_output_files.append(nwbfile_output_path)
