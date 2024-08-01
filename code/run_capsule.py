@@ -556,12 +556,16 @@ if __name__ == "__main__":
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
                 print(f"Writing NWB file to {nwbfile_output_path}")
+                if NWB_BACKEND == "zarr":
+                    write_args = {'link_data': False}
+                else:
+                    write_args = {}
                 # if NWB_BACKEND == "zarr":
-                #     export_kwargs = {"number_of_jobs": n_jobs}
+                #    write_args = {"number_of_jobs": n_jobs}
                 # else:
-                #    export_kwargs = {}
+                #    write_args = {}
                 # TODO: enable parallel write
                 with io_class(str(nwbfile_output_path), "w") as export_io:
-                    export_io.export(src_io=read_io, nwbfile=nwbfile)
+                    export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
                 print(f"Done writing {nwbfile_output_path}")
                 nwb_output_files.append(nwbfile_output_path)
