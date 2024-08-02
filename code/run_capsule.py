@@ -293,9 +293,13 @@ if __name__ == "__main__":
                             recording_job_dict = job_dict
                             break
                     if recording_job_dict is not None:
+                        print(f"Loading {recording_name} from JSON file")
                         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
+                        print(f"\t{recording}")
                         if "recording_lfp_dict" in job_dict:
+                            print(f"Loading LFP for {recording_name} from JSON file")
                             recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                            print(f"\t{recording_lfp}")
                     else:
                         print(f"Could not find JSON file associated to {recording_name}. Loading recording from AIND raw data")
                         # Add Recordings
