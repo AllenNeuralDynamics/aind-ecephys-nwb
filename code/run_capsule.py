@@ -29,11 +29,6 @@ from hdmf_zarr import NWBZarrIO
 from numcodecs import Blosc
 from utils import get_devices_from_rig_metadata
 
-# hdf5 or zarr
-STUB_TEST = False
-STUB_SECONDS = 10
-WRITE_LFP = True
-WRITE_RAW = True
 
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
@@ -47,8 +42,8 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-job_kwargs = dict(n_jobs=-1, progress_bar=False)
 n_jobs = os.cpu_count()
+job_kwargs = dict(n_jobs=n_jobs, progress_bar=False)
 si.set_global_job_kwargs(**job_kwargs)
 
 
@@ -562,13 +557,11 @@ if __name__ == "__main__":
                 print(f"Writing NWB file to {nwbfile_output_path}")
                 if NWB_BACKEND == "zarr":
                     write_args = {'link_data': False}
+                    # TODO: enable parallel write for Zarr
+                    # write_args = {"number_of_jobs": n_jobs}
                 else:
                     write_args = {}
-                # if NWB_BACKEND == "zarr":
-                #    write_args = {"number_of_jobs": n_jobs}
-                # else:
-                #    write_args = {}
-                # TODO: enable parallel write
+
                 with io_class(str(nwbfile_output_path), "w") as export_io:
                     export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
                 print(f"Done writing {nwbfile_output_path}")
