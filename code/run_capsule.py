@@ -1,4 +1,5 @@
 """ Writes RAW ephys and LFP to an NWB file """
+
 import argparse
 from pathlib import Path
 import numpy as np
@@ -116,7 +117,7 @@ if __name__ == "__main__":
         WRITE_LFP = True if args.static_write_lfp == "true" else False
 
     if args.write_raw:
-        WRITE_RAW = False
+        WRITE_RAW = True
     else:
         WRITE_RAW = True if args.static_write_raw == "true" else False
 
@@ -180,7 +181,6 @@ if __name__ == "__main__":
         job_dicts.append(job_dict)
     print(f"Found {len(job_dicts)} JSON job files")
 
-
     if len(job_dicts) == 0:
         print("Standalone mode!")
         # AIND-specific section to parse AIND files
@@ -207,9 +207,11 @@ if __name__ == "__main__":
         experiment_names = [e["name"] for eid, e in neo_io.folder_structure[record_nodes[0]]["experiments"].items()]
         recording_names = [
             r["name"]
-            for rid, r in neo_io.folder_structure[record_nodes[0]]["experiments"][experiment_ids[0]]["recordings"].items()
+            for rid, r in neo_io.folder_structure[record_nodes[0]]["experiments"][experiment_ids[0]][
+                "recordings"
+            ].items()
         ]
-        # in this case we don't need to split by group, since 
+        # in this case we don't need to split by group, since
         block_ids = experiment_names
         recording_ids = recording_names
     else:
@@ -263,7 +265,7 @@ if __name__ == "__main__":
                 nwb_file_name = nwb_original_file_name
             else:
                 nwb_file_name = f"{nwb_original_file_name}_{block_str}_{recording_str}"
-            
+
             if STUB_TEST:
                 nwb_file_name = f"{nwb_file_name}_stub"
 
@@ -296,7 +298,9 @@ if __name__ == "__main__":
                             recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
                             print(f"\t{recording_lfp}")
                     else:
-                        print(f"Could not find JSON file associated to {recording_name}. Loading recording from AIND raw data")
+                        print(
+                            f"Could not find JSON file associated to {recording_name}. Loading recording from AIND raw data"
+                        )
                         # Add Recordings
                         recording_multi_segment_lfp = None
                         if compressed_folder is not None:
@@ -305,7 +309,9 @@ if __name__ == "__main__":
                             try:
                                 print(f"Trying to load LFP from {stream_name_zarr}")
                                 stream_name_zarr_lfp = stream_name_zarr.replace("AP", "LFP")
-                                recording_multi_segment_lfp = si.read_zarr(compressed_folder / f"{stream_name_zarr_lfp}.zarr")
+                                recording_multi_segment_lfp = si.read_zarr(
+                                    compressed_folder / f"{stream_name_zarr_lfp}.zarr"
+                                )
                             except:
                                 pass
                         else:
@@ -349,9 +355,9 @@ if __name__ == "__main__":
                             electrode_group_location = "unknown"
                             record_node, oe_stream_name = stream_name.split("#")
                             recording_folder_name = f"{block_str}_{stream_name}_{recording_name}"
-                            settings_file = neo_io.folder_structure[record_node]["experiments"][experiment_ids[block_index]][
-                                "settings_file"
-                            ]
+                            settings_file = neo_io.folder_structure[record_node]["experiments"][
+                                experiment_ids[block_index]
+                            ]["settings_file"]
                             probe = pi.read_openephys(settings_file, stream_name=oe_stream_name)
                             probe_info = dict(
                                 name=probe.name,
@@ -359,7 +365,7 @@ if __name__ == "__main__":
                                 model_name=probe.model_name,
                                 serial_number=probe.serial_number,
                             )
-                    
+
                     if probe_info is not None:
                         probe_device_name = probe_info.get("name", None)
                         probe_device_manufacturer = probe_info.get("manufacturer", None)
@@ -434,11 +440,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes(
-                            recording=recording,
-                            nwbfile=nwbfile,
-                            metadata=electrode_metadata
-                        )
+                        add_electrodes(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -529,7 +531,9 @@ if __name__ == "__main__":
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
                             print(f"\tSaving preprocessed LFP to binary")
-                            recording_lfp = recording_lfp.save(folder=scratch_folder / f"{recording_name}-LFP", verbose=False)
+                            recording_lfp = recording_lfp.save(
+                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False
+                            )
 
                         print(f"\tAdding LFP recording {recording_lfp}")
                         add_recording(
@@ -548,15 +552,14 @@ if __name__ == "__main__":
                 es_compressor = default_electrical_series_compressors[NWB_BACKEND]
 
                 for key in backend_configuration.dataset_configurations.keys():
-                    if any([es_name in key for es_name in electrical_series_to_configure]) \
-                        and "timestamps" not in key:
+                    if any([es_name in key for es_name in electrical_series_to_configure]) and "timestamps" not in key:
                         backend_configuration.dataset_configurations[key].compression_method = es_compressor
                         print(f"\tSetting compression for {key} to {es_compressor}")
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
                 print(f"Writing NWB file to {nwbfile_output_path}")
                 if NWB_BACKEND == "zarr":
-                    write_args = {'link_data': False}
+                    write_args = {"link_data": False}
                     # TODO: enable parallel write for Zarr
                     # write_args = {"number_of_jobs": n_jobs}
                 else:

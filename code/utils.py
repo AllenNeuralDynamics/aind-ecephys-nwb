@@ -176,4 +176,3 @@ def get_laser_description_manufacturer(laser, type):
     if isinstance(laser_device_manufacturer, dict):
         laser_device_manufacturer = laser_device_manufacturer.get("name", None)
     return laser_device_description, laser_device_manufacturer
-
