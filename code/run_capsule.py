@@ -249,7 +249,14 @@ if __name__ == "__main__":
         if "LFP" in stream_name:
             continue
         streams_to_process.append(stream_name)
-    print(f"Number of streams to write: {len(streams_to_process)}")
+
+    block_ids = sorted(block_ids)
+    recording_ids = sorted(recording_ids)
+    streams_to_process = sorted(streams_to_process)
+
+    print(f"Number of NWB files to write: {len(block_ids) * len(recording_ids)}")
+
+    print(f"Number of streams to write for each file: {len(streams_to_process)}")
 
     # Construct 1 nwb file per experiment - streams are concatenated!
     nwb_output_files = []
@@ -257,8 +264,6 @@ if __name__ == "__main__":
     nwb_output_files = []
     for block_index, block_str in enumerate(block_ids):
         for segment_index, recording_str in enumerate(recording_ids):
-            recording_name = recording_names[segment_index]
-
             # add recording/experiment id if needed
             nwb_original_file_name = nwbfile_input_path.stem
             if block_str in nwb_original_file_name and recording_str in nwb_original_file_name:
@@ -281,6 +286,8 @@ if __name__ == "__main__":
                 nwbfile = read_io.read()
 
                 for stream_name in streams_to_process:
+                    recording_name = f"{block_str}_{stream_name}_{recording_str}"
+                    print(f"Processing {recording_name}")
 
                     # load JSON and recordings
                     recording_job_dict = None
@@ -290,24 +297,21 @@ if __name__ == "__main__":
                             recording_job_dict = job_dict
                             break
                     if recording_job_dict is not None:
-                        print(f"Loading {recording_name} from JSON file")
+                        print(f"\tLoading recording from JSON file")
                         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
-                        print(f"\t{recording}")
+                        print(f"\t\t{recording}")
                         if "recording_lfp_dict" in job_dict:
-                            print(f"Loading LFP for {recording_name} from JSON file")
+                            print(f"\tLoading associated LFP recording")
                             recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
-                            print(f"\t{recording_lfp}")
+                            print(f"\t\t{recording_lfp}")
                     else:
-                        print(
-                            f"Could not find JSON file associated to {recording_name}. Loading recording from AIND raw data"
-                        )
+                        print("\tCould not find JSON file")
                         # Add Recordings
                         recording_multi_segment_lfp = None
                         if compressed_folder is not None:
                             stream_name_zarr = f"{block_str}_{stream_name}"
                             recording_multi_segment = si.read_zarr(compressed_folder / f"{stream_name_zarr}.zarr")
                             try:
-                                print(f"Trying to load LFP from {stream_name_zarr}")
                                 stream_name_zarr_lfp = stream_name_zarr.replace("AP", "LFP")
                                 recording_multi_segment_lfp = si.read_zarr(
                                     compressed_folder / f"{stream_name_zarr_lfp}.zarr"
@@ -324,9 +328,13 @@ if __name__ == "__main__":
                                 )
                             except:
                                 pass
+                        print(f"\tLoading recording from AIND raw data")
                         recording = si.split_recording(recording_multi_segment)[segment_index]
+                        print(f"\t\t{recording}")
                         if recording_multi_segment_lfp is not None:
+                            print(f"\tLoading associated LFP recording")
                             recording_lfp = si.split_recording(recording_multi_segment_lfp)[segment_index]
+                            print(f"\t\t{recording_lfp}")
 
                     # Add device and electrode group
                     probe_device_name = None
@@ -409,7 +417,6 @@ if __name__ == "__main__":
                             ],
                         )
                     )
-
                     # Add channel properties (group_name property to associate electrodes with group)
                     recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
                     if WRITE_RAW:
@@ -462,8 +469,15 @@ if __name__ == "__main__":
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
+                            recording_times = recording.get_times()
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
-                            recording_lfp = spre.scale(recording_lfp, dtype="int16")
+                            recording_lfp = spre.astype(recording_lfp, dtype="int16")
+                            # set times
+                            sampling_period = 1. / lfp_sampling_rate
+                            lfp_start = recording_times[0] + sampling_period / 2
+                            lfp_stop = recording_times[-1] - sampling_period / 2
+                            num_samples = recording_lfp.get_num_samples()
+                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples))
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
@@ -514,7 +528,9 @@ if __name__ == "__main__":
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
                             print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
+                            lfp_times = recording_lfp.get_times()
                             recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
+                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
@@ -546,7 +562,6 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
 
                 print(f"Added {len(streams_to_process)} streams")
-
                 print(f"Configuring {NWB_BACKEND} backend")
                 backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)
                 es_compressor = default_electrical_series_compressors[NWB_BACKEND]
@@ -554,7 +569,6 @@ if __name__ == "__main__":
                 for key in backend_configuration.dataset_configurations.keys():
                     if any([es_name in key for es_name in electrical_series_to_configure]) and "timestamps" not in key:
                         backend_configuration.dataset_configurations[key].compression_method = es_compressor
-                        print(f"\tSetting compression for {key} to {es_compressor}")
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
                 print(f"Writing NWB file to {nwbfile_output_path}")
