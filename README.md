@@ -13,7 +13,7 @@ The `data/` folder must include:
 
 - a base valid NWB file to append the ephys data to
 - the raw data
-- (optional) a list of json files produced by the [aind-ephys-job-dispatch]() process
+- (optional) a list of json files produced by the [aind-ephys-job-dispatch](https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch/) process
 
 If no JSON files are provided, the capsule will assume the raw data is in the [AIND
 ephys format](https://github.com/AllenNeuralDynamics/aind-physio-arch/blob/main/doc/file_formats/ephys.md). When JSON files are provided, the capsule will use this information 
