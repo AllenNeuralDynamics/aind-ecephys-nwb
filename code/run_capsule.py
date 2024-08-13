@@ -342,11 +342,11 @@ if __name__ == "__main__":
                         for device_name, device in devices_from_rig.items():
                             # add the device, since it could be a laser
                             if device_name not in nwbfile.devices:
-                                nwbfile.add_device(devices_from_rig[device_name])
+                                nwbfile.add_device(device)
                             # find probe device name
                             probe_no_spaces = device_name.replace(" ", "")
                             if probe_no_spaces in stream_name:
-                                probe_device_name = probe_no_spaces
+                                probe_device_name = device_name
                                 electrode_group_location = target_locations.get(device_name, "unknown")
                                 print(
                                     f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
@@ -506,9 +506,9 @@ if __name__ == "__main__":
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
                         # similar processing to allensdk
                         if SURFACE_CHANNEL_AGAR_PROBES_INDICES is not None:
-                            if probe.name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
-                                print(f"\t\tCommon median referencing for probe {probe.name}")
-                                surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe.name]
+                            if probe_device_name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
+                                print(f"\t\tCommon median referencing for probe {probe_device_name}")
+                                surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe_device_name]
                                 # get indices of channels out of brain including surface channel
                                 reference_channel_indices = np.arange(surface_channel_index, len(channel_ids))
                                 reference_channel_ids = channel_ids[reference_channel_indices]
@@ -518,6 +518,8 @@ if __name__ == "__main__":
                                     reference="global",
                                     ref_channel_ids=reference_channel_ids,
                                 )
+                            else:
+                                print(f"Could not find {probe_device_name} in surface channel dictionary")
 
                         # spatial subsampling from allensdk - keep every nth channel
                         if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
