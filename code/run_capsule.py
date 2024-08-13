@@ -399,7 +399,8 @@ if __name__ == "__main__":
                         if probe_device_name not in nwbfile.devices:
                             nwbfile.add_device(probe_device)
                             print(f"\tAdded probe device: {probe_device.name} from recording metadata")
-                    else:
+                    # last resort: could not find a device
+                    if probe_device_name is None:
                         print("\tCould not load device information: using default Device")
                         probe_device_name = "Device"
                         probe_device = Device(name=probe_device_name, description="Default device")
