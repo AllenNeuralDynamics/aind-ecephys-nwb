@@ -290,20 +290,27 @@ if __name__ == "__main__":
                     print(f"Processing {recording_name}")
 
                     # load JSON and recordings
-                    recording_job_dict = None
-                    recording_lfp = None
+                    # we need lists because multiple groups are saved to different JSON files
+                    recording_job_dicts = []
                     for job_dict in job_dicts:
-                        if job_dict["recording_name"] == recording_name:
-                            recording_job_dict = job_dict
-                            break
-                    if recording_job_dict is not None:
-                        print(f"\tLoading recording from JSON file")
-                        recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
-                        print(f"\t\t{recording}")
-                        if "recording_lfp_dict" in job_dict:
-                            print(f"\tLoading associated LFP recording")
-                            recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
-                            print(f"\t\t{recording_lfp}")
+                        if recording_name in job_dict["recording_name"]:
+                            recording_job_dicts.append(job_dict)
+
+                    recordings = []
+                    recordings_lfp = []
+                    if recording_job_dicts is not None:
+                        print(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
+                        for recording_job_dict in recording_job_dicts:
+                            recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
+                            print(f"\t\t{recording}")
+                            if "recording_lfp_dict" in job_dict:
+                                print(f"\tLoading associated LFP recording")
+                                recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                print(f"\t\t{recording_lfp}")
+                            else:
+                                recording_lfp = None
+                            recordings.append(recording)
+                            recordings_lfp.append(recording_lfp)
                     else:
                         print("\tCould not find JSON file")
                         # Add Recordings
@@ -335,234 +342,239 @@ if __name__ == "__main__":
                             print(f"\tLoading associated LFP recording")
                             recording_lfp = si.split_recording(recording_multi_segment_lfp)[segment_index]
                             print(f"\t\t{recording_lfp}")
-
-                    # Add device and electrode group
-                    probe_device_name = None
-                    if devices_from_rig:
-                        for device_name, device in devices_from_rig.items():
-                            # add the device, since it could be a laser
-                            if device_name not in nwbfile.devices:
-                                nwbfile.add_device(device)
-                            # find probe device name
-                            probe_no_spaces = device_name.replace(" ", "")
-                            if probe_no_spaces in stream_name:
-                                probe_device_name = device_name
-                                electrode_group_location = target_locations.get(device_name, "unknown")
-                                print(
-                                    f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
-                                )
-                                break
-                    probe_info = None
-                    if probe_device_name is None:
-                        if recording_job_dict is not None:
-                            electrode_group_location = "unknown"
-                            probes_info = recording.get_annotation("probes_info", None)
-                            if probes_info is not None and len(probes_info) == 1:
-                                probe_info = probes_info[0]
                         else:
-                            electrode_group_location = "unknown"
-                            record_node, oe_stream_name = stream_name.split("#")
-                            recording_folder_name = f"{block_str}_{stream_name}_{recording_name}"
-                            settings_file = neo_io.folder_structure[record_node]["experiments"][
-                                experiment_ids[block_index]
-                            ]["settings_file"]
-                            probe = pi.read_openephys(settings_file, stream_name=oe_stream_name)
-                            probe_info = dict(
-                                name=probe.name,
-                                manuefacturer=probe.manufacturer,
-                                model_name=probe.model_name,
-                                serial_number=probe.serial_number,
-                            )
+                            recording_lfp = None
+                        recordings = [recording]
+                        recordings_lfp = [recording_lfp]
 
-                    if probe_info is not None:
-                        probe_device_name = probe_info.get("name", None)
-                        probe_device_manufacturer = probe_info.get("manufacturer", None)
-                        probe_model_name = probe_info.get("model_name", None)
-                        probe_serial_number = probe_info.get("serial_number", None)
-                        probe_device_description = ""
+                    for recording, recording_lfp in zip(recordings, recordings_lfp):
+                        # Add device and electrode group
+                        probe_device_name = None
+                        if devices_from_rig:
+                            for device_name, device in devices_from_rig.items():
+                                # add the device, since it could be a laser
+                                if device_name not in nwbfile.devices:
+                                    nwbfile.add_device(device)
+                                # find probe device name
+                                probe_no_spaces = device_name.replace(" ", "")
+                                if probe_no_spaces in stream_name:
+                                    probe_device_name = device_name
+                                    electrode_group_location = target_locations.get(device_name, "unknown")
+                                    print(
+                                        f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
+                                    )
+                                    break
+                        probe_info = None
                         if probe_device_name is None:
+                            if recording_job_dict is not None:
+                                electrode_group_location = "unknown"
+                                probes_info = recording.get_annotation("probes_info", None)
+                                if probes_info is not None and len(probes_info) == 1:
+                                    probe_info = probes_info[0]
+                            else:
+                                electrode_group_location = "unknown"
+                                record_node, oe_stream_name = stream_name.split("#")
+                                recording_folder_name = f"{block_str}_{stream_name}_{recording_name}"
+                                settings_file = neo_io.folder_structure[record_node]["experiments"][
+                                    experiment_ids[block_index]
+                                ]["settings_file"]
+                                probe = pi.read_openephys(settings_file, stream_name=oe_stream_name)
+                                probe_info = dict(
+                                    name=probe.name,
+                                    manuefacturer=probe.manufacturer,
+                                    model_name=probe.model_name,
+                                    serial_number=probe.serial_number,
+                                )
+
+                        if probe_info is not None:
+                            probe_device_name = probe_info.get("name", None)
+                            probe_device_manufacturer = probe_info.get("manufacturer", None)
+                            probe_model_name = probe_info.get("model_name", None)
+                            probe_serial_number = probe_info.get("serial_number", None)
+                            probe_device_description = ""
+                            if probe_device_name is None:
+                                if probe_model_name is not None:
+                                    probe_device_name = probe_model_name
+                                else:
+                                    probe_device_name = "Probe"
                             if probe_model_name is not None:
-                                probe_device_name = probe_model_name
-                            else:
-                                probe_device_name = "Probe"
-                        if probe_model_name is not None:
-                            probe_device_description += f"Model: {probe_device_description}"
-                        if probe_serial_number is not None:
-                            if len(probe_device_description) > 0:
-                                probe_device_description += " - "
-                            probe_device_description += f"Serial number: {probe_serial_number}"
-                        probe_device = Device(
-                            name=probe_device_name,
-                            description=probe_device_description,
-                            manufacturer=probe_device_manufacturer,
-                        )
-                        if probe_device_name not in nwbfile.devices:
-                            nwbfile.add_device(probe_device)
-                            print(f"\tAdded probe device: {probe_device.name} from recording metadata")
-                    # last resort: could not find a device
-                    if probe_device_name is None:
-                        print("\tCould not load device information: using default Device")
-                        probe_device_name = "Device"
-                        probe_device = Device(name=probe_device_name, description="Default device")
-
-                    electrode_metadata = dict(
-                        Ecephys=dict(
-                            Device=[dict(name=probe_device_name)],
-                            ElectrodeGroup=[
-                                dict(
-                                    name=probe_device_name,
-                                    description=f"Recorded electrodes from probe {probe_device_name}",
-                                    location=electrode_group_location,
-                                    device=probe_device_name,
-                                )
-                            ],
-                        )
-                    )
-                    # Add channel properties (group_name property to associate electrodes with group)
-                    recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
-                    if WRITE_RAW:
-                        electrical_series_name = f"ElectricalSeries{probe_device_name}"
-                        electrical_series_metadata = {
-                            electrical_series_name: dict(
-                                name=f"ElectricalSeries{probe_device_name}",
-                                description=f"Voltage traces from {probe_device_name}",
+                                probe_device_description += f"Model: {probe_device_description}"
+                            if probe_serial_number is not None:
+                                if len(probe_device_description) > 0:
+                                    probe_device_description += " - "
+                                probe_device_description += f"Serial number: {probe_serial_number}"
+                            probe_device = Device(
+                                name=probe_device_name,
+                                description=probe_device_description,
+                                manufacturer=probe_device_manufacturer,
                             )
-                        }
-                        electrode_metadata["Ecephys"].update(electrical_series_metadata)
-                        add_electrical_series_kwargs = dict(
-                            es_key=f"ElectricalSeries{probe_device_name}", write_as="raw"
-                        )
+                            if probe_device_name not in nwbfile.devices:
+                                nwbfile.add_device(probe_device)
+                                print(f"\tAdded probe device: {probe_device.name} from recording metadata")
+                        # last resort: could not find a device
+                        if probe_device_name is None:
+                            print("\tCould not load device information: using default Device")
+                            probe_device_name = "Device"
+                            probe_device = Device(name=probe_device_name, description="Default device")
 
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording.sampling_frequency)
-                            recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
-
-                        print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
-                        add_recording(
-                            recording=recording,
-                            nwbfile=nwbfile,
-                            metadata=electrode_metadata,
-                            compression=None,
-                            **add_electrical_series_kwargs,
-                        )
-                        electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
-                    else:
-                        # always add recording electrodes, as they will be used by Units
-                        add_electrodes(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
-
-                    if WRITE_LFP:
-                        electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
-                        electrical_series_metadata = {
-                            electrical_series_name: dict(
-                                name=f"ElectricalSeries{probe_device_name}-LFP",
-                                description=f"LFP voltage traces from {probe_device_name}",
+                        electrode_metadata = dict(
+                            Ecephys=dict(
+                                Device=[dict(name=probe_device_name)],
+                                ElectrodeGroup=[
+                                    dict(
+                                        name=probe_device_name,
+                                        description=f"Recorded electrodes from probe {probe_device_name}",
+                                        location=electrode_group_location,
+                                        device=probe_device_name,
+                                    )
+                                ],
                             )
-                        }
-                        electrode_metadata["Ecephys"].update(electrical_series_metadata)
-                        add_electrical_lfp_series_kwargs = dict(
-                            es_key=f"ElectricalSeries{probe_device_name}-LFP",
-                            write_as="lfp",
                         )
-
-                        if recording_lfp is None:
-                            # Wide-band recording: filter and resample LFP
-                            print(
-                                f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
+                        # Add channel properties (group_name property to associate electrodes with group)
+                        recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                        if WRITE_RAW:
+                            electrical_series_name = f"ElectricalSeries{probe_device_name}"
+                            electrical_series_metadata = {
+                                electrical_series_name: dict(
+                                    name=f"ElectricalSeries{probe_device_name}",
+                                    description=f"Voltage traces from {probe_device_name}",
+                                )
+                            }
+                            electrode_metadata["Ecephys"].update(electrical_series_metadata)
+                            add_electrical_series_kwargs = dict(
+                                es_key=f"ElectricalSeries{probe_device_name}", write_as="raw"
                             )
-                            recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_times = recording.get_times()
-                            recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
-                            recording_lfp = spre.astype(recording_lfp, dtype="int16")
-                            # set times
-                            sampling_period = 1. / lfp_sampling_rate
-                            lfp_start = recording_times[0] + sampling_period / 2
-                            lfp_stop = recording_times[-1] - sampling_period / 2
-                            num_samples = recording_lfp.get_num_samples()
-                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples))
 
-                            # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
-                            # the workaround is to discard the last samples to make it "even"
-                            if recording.get_num_segments() == 1:
-                                recording_lfp = recording_lfp.frame_slice(
-                                    start_frame=0,
-                                    end_frame=int(
-                                        recording_lfp.get_num_samples() // lfp_sampling_rate * lfp_sampling_rate
-                                    ),
-                                )
-                            lfp_period = 1.0 / lfp_sampling_rate
-                            for segment_index in range(recording.get_num_segments()):
-                                ts_lfp = (
-                                    np.arange(recording_lfp.get_num_samples(segment_index))
-                                    / recording_lfp.sampling_frequency
-                                    - recording.get_times(segment_index)[0]
-                                    + lfp_period / 2
-                                )
-                                recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
-                            save_to_binary = True
+                            if STUB_TEST:
+                                end_frame = int(STUB_SECONDS * recording.sampling_frequency)
+                                recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
+
+                            print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
+                            add_recording(
+                                recording=recording,
+                                nwbfile=nwbfile,
+                                metadata=electrode_metadata,
+                                compression=None,
+                                **add_electrical_series_kwargs,
+                            )
+                            electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                         else:
-                            print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
-                            save_to_binary = False
-                        channel_ids = recording_lfp.get_channel_ids()
+                            # always add recording electrodes, as they will be used by Units
+                            add_electrodes(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
-                        # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
-                        # similar processing to allensdk
-                        if SURFACE_CHANNEL_AGAR_PROBES_INDICES is not None:
-                            if probe_device_name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
-                                print(f"\t\tCommon median referencing for probe {probe_device_name}")
-                                surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe_device_name]
-                                # get indices of channels out of brain including surface channel
-                                reference_channel_indices = np.arange(surface_channel_index, len(channel_ids))
-                                reference_channel_ids = channel_ids[reference_channel_indices]
-                                # common median reference to channels out of brain
-                                recording_lfp = spre.common_reference(
-                                    recording_lfp,
-                                    reference="global",
-                                    ref_channel_ids=reference_channel_ids,
+                        if WRITE_LFP:
+                            electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
+                            electrical_series_metadata = {
+                                electrical_series_name: dict(
+                                    name=f"ElectricalSeries{probe_device_name}-LFP",
+                                    description=f"LFP voltage traces from {probe_device_name}",
                                 )
-                            else:
-                                print(f"Could not find {probe_device_name} in surface channel dictionary")
-
-                        # spatial subsampling from allensdk - keep every nth channel
-                        if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
-                            print(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
-                            channel_ids_to_keep = channel_ids[0 : len(channel_ids) : SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
-                            recording_lfp = recording_lfp.channel_slice(channel_ids_to_keep)
-
-                        # time subsampling/decimate
-                        if TEMPORAL_SUBSAMPLING_FACTOR > 1:
-                            print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-                            lfp_times = recording_lfp.get_times()
-                            recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
-                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
-
-                        # high pass filter from allensdk
-                        if HIGHPASS_FILTER_FREQ_MIN > 0:
-                            print(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
-
-                        # Assign to the correct channel group
-                        recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
-
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
-                            recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
-
-                        # For streams without a separate LFP, save to binary to speed up conversion later
-                        if save_to_binary:
-                            print(f"\tSaving preprocessed LFP to binary")
-                            recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False
+                            }
+                            electrode_metadata["Ecephys"].update(electrical_series_metadata)
+                            add_electrical_lfp_series_kwargs = dict(
+                                es_key=f"ElectricalSeries{probe_device_name}-LFP",
+                                write_as="lfp",
                             )
 
-                        print(f"\tAdding LFP recording {recording_lfp}")
-                        add_recording(
-                            recording=recording_lfp,
-                            nwbfile=nwbfile,
-                            metadata=electrode_metadata,
-                            compression=None,
-                            **add_electrical_lfp_series_kwargs,
-                        )
-                        electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
+                            if recording_lfp is None:
+                                # Wide-band recording: filter and resample LFP
+                                print(
+                                    f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
+                                )
+                                recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
+                                recording_times = recording.get_times()
+                                recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
+                                recording_lfp = spre.astype(recording_lfp, dtype="int16")
+                                # set times
+                                sampling_period = 1. / lfp_sampling_rate
+                                lfp_start = recording_times[0] + sampling_period / 2
+                                lfp_stop = recording_times[-1] - sampling_period / 2
+                                num_samples = recording_lfp.get_num_samples()
+                                recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples))
+
+                                # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
+                                # the workaround is to discard the last samples to make it "even"
+                                if recording.get_num_segments() == 1:
+                                    recording_lfp = recording_lfp.frame_slice(
+                                        start_frame=0,
+                                        end_frame=int(
+                                            recording_lfp.get_num_samples() // lfp_sampling_rate * lfp_sampling_rate
+                                        ),
+                                    )
+                                lfp_period = 1.0 / lfp_sampling_rate
+                                for segment_index in range(recording.get_num_segments()):
+                                    ts_lfp = (
+                                        np.arange(recording_lfp.get_num_samples(segment_index))
+                                        / recording_lfp.sampling_frequency
+                                        - recording.get_times(segment_index)[0]
+                                        + lfp_period / 2
+                                    )
+                                    recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
+                                save_to_binary = True
+                            else:
+                                print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
+                                save_to_binary = False
+                            channel_ids = recording_lfp.get_channel_ids()
+
+                            # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
+                            # similar processing to allensdk
+                            if SURFACE_CHANNEL_AGAR_PROBES_INDICES is not None:
+                                if probe_device_name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
+                                    print(f"\t\tCommon median referencing for probe {probe_device_name}")
+                                    surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe_device_name]
+                                    # get indices of channels out of brain including surface channel
+                                    reference_channel_indices = np.arange(surface_channel_index, len(channel_ids))
+                                    reference_channel_ids = channel_ids[reference_channel_indices]
+                                    # common median reference to channels out of brain
+                                    recording_lfp = spre.common_reference(
+                                        recording_lfp,
+                                        reference="global",
+                                        ref_channel_ids=reference_channel_ids,
+                                    )
+                                else:
+                                    print(f"Could not find {probe_device_name} in surface channel dictionary")
+
+                            # spatial subsampling from allensdk - keep every nth channel
+                            if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
+                                print(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
+                                channel_ids_to_keep = channel_ids[0 : len(channel_ids) : SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
+                                recording_lfp = recording_lfp.channel_slice(channel_ids_to_keep)
+
+                            # time subsampling/decimate
+                            if TEMPORAL_SUBSAMPLING_FACTOR > 1:
+                                print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
+                                lfp_times = recording_lfp.get_times()
+                                recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
+                                recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
+
+                            # high pass filter from allensdk
+                            if HIGHPASS_FILTER_FREQ_MIN > 0:
+                                print(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
+                                recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
+
+                            # Assign to the correct channel group
+                            recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
+
+                            if STUB_TEST:
+                                end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
+                                recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
+
+                            # For streams without a separate LFP, save to binary to speed up conversion later
+                            if save_to_binary:
+                                print(f"\tSaving preprocessed LFP to binary")
+                                recording_lfp = recording_lfp.save(
+                                    folder=scratch_folder / f"{recording_name}-LFP", verbose=False
+                                )
+
+                            print(f"\tAdding LFP recording {recording_lfp}")
+                            add_recording(
+                                recording=recording_lfp,
+                                nwbfile=nwbfile,
+                                metadata=electrode_metadata,
+                                compression=None,
+                                **add_electrical_lfp_series_kwargs,
+                            )
+                            electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
 
                 print(f"Added {len(streams_to_process)} streams")
                 print(f"Configuring {NWB_BACKEND} backend")
