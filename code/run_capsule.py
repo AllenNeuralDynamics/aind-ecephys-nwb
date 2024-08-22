@@ -285,7 +285,8 @@ if __name__ == "__main__":
             with io_class(str(nwbfile_input_path), "r") as read_io:
                 nwbfile = read_io.read()
 
-                for stream_name in streams_to_process:
+                probe_device_names = []
+                for stream_index, stream_name in enumerate(streams_to_process):
                     recording_name = f"{block_str}_{stream_name}_{recording_str}"
                     print(f"Processing {recording_name}")
 
@@ -391,6 +392,9 @@ if __name__ == "__main__":
                             if len(probe_device_description) > 0:
                                 probe_device_description += " - "
                             probe_device_description += f"Serial number: {probe_serial_number}"
+                        # this is needed to account for a case where multiple streams have the same device name
+                        if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
+                            probe_device_name = f"{probe_device_name}-{stream_index}"
                         probe_device = Device(
                             name=probe_device_name,
                             description=probe_device_description,
@@ -403,7 +407,12 @@ if __name__ == "__main__":
                     if probe_device_name is None:
                         print("\tCould not load device information: using default Device")
                         probe_device_name = "Device"
+                        if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
+                            probe_device_name = f"{probe_device_name}-{stream_index}"
                         probe_device = Device(name=probe_device_name, description="Default device")
+
+                    # keep track of all added probe device names
+                    probe_device_names.append(probe_device_name)
 
                     electrode_metadata = dict(
                         Ecephys=dict(
