@@ -303,7 +303,7 @@ if __name__ == "__main__":
                         print(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
                         if len(recording_job_dicts) > 1:
                             # in case of multiple groups, sort by group names
-                            recording_names = sorted([jd["recording_name"] for jb in recording_job_dicts])
+                            recording_names = sorted([jd["recording_name"] for jd in recording_job_dicts])
                             recording_job_dicts_sorted = recording_job_dicts[np.argsort(recording_names)]
                         else:
                             recording_job_dicts_sorted = recording_job_dicts
