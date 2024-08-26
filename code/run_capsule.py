@@ -303,14 +303,14 @@ if __name__ == "__main__":
                         print(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
                         if len(recording_job_dicts) > 1:
                             # in case of multiple groups, sort by group names
-                            recording_names = sorted([jd["recording_name"] for jd in recording_job_dicts])
-                            recording_job_dicts_sorted = recording_job_dicts[np.argsort(recording_names)]
+                            sort_idxs = np.argsort([jd["recording_name"] for jd in recording_job_dicts])
+                            recording_job_dicts_sorted = np.array(recording_job_dicts)[sort_idxs]
                         else:
                             recording_job_dicts_sorted = recording_job_dicts
                         for recording_job_dict in recording_job_dicts_sorted:
-                            recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
+                            recording = si.load_extractor(recording_job_dict["recording_dict"], base_folder=data_folder)
                             recordings.append(recording)
-                            print(f"\t\t{recording}")
+                            print(f"\t\t{recording_job_dict['recording_name']}: {recording}")
                             if "recording_lfp_dict" in job_dict:
                                 print(f"\tLoading associated LFP recording")
                                 recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
