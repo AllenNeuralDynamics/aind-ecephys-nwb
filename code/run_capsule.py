@@ -321,8 +321,16 @@ if __name__ == "__main__":
                         if len(recording_job_dicts_sorted) > 1:
                             print(f"\t\tAggregating channels from {len(recordings)} groups")
                             recording = si.aggregate_channels(recordings)
+                            # probes_info get lost in aggregation, so we need to manually set them
+                            recording.annotate(
+                                probes_info=recordings[0].get_annotation("probes_info")
+                            )
                             if len(recordings_lfp) > 0:
                                 recording_lfp = si.aggregate_channels(recordings_lfp)
+                                recording_lfp.annotate(
+                                    probes_info=recordings_lfp[0].get_annotation("probes_info")
+                                )
+
                     else:
                         print("\tCould not find JSON file")
                         # Add Recordings
