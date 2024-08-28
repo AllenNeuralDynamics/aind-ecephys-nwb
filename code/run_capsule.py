@@ -18,8 +18,8 @@ from neuroconv.tools.nwb_helpers import (
     get_default_backend_configuration,
 )
 from neuroconv.tools.spikeinterface import (
-    add_recording,
-    add_electrodes,
+    add_recording_to_nwbfile,
+    add_electrodes_to_nwbfile,
 )
 
 from pynwb import NWBHDF5IO
@@ -467,7 +467,7 @@ if __name__ == "__main__":
                             recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
 
                         print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
-                        add_recording(
+                        add_recording_to_nwbfile(
                             recording=recording,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
@@ -477,7 +477,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -584,7 +584,7 @@ if __name__ == "__main__":
                             )
 
                         print(f"\tAdding LFP recording {recording_lfp}")
-                        add_recording(
+                        add_recording_to_nwbfile(
                             recording=recording_lfp,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
