@@ -507,7 +507,7 @@ if __name__ == "__main__":
                             lfp_start = recording_times[0] + sampling_period / 2
                             lfp_stop = recording_times[-1] - sampling_period / 2
                             num_samples = recording_lfp.get_num_samples()
-                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples))
+                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples), segment_index=segment_index, with_warning=False)
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
@@ -562,7 +562,7 @@ if __name__ == "__main__":
                             print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
                             lfp_times = recording_lfp.get_times(segment_index=segment_index)
                             recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
-                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
+                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=segment_index, with_warning=False)
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
