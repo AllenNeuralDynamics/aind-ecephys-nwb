@@ -499,7 +499,7 @@ if __name__ == "__main__":
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_times = recording.get_times()
+                            recording_times = recording.get_times(segment_index=segment_index)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
                             # set times
@@ -519,14 +519,14 @@ if __name__ == "__main__":
                                     ),
                                 )
                             lfp_period = 1.0 / lfp_sampling_rate
-                            for segment_index in range(recording.get_num_segments()):
+                            for sg_idx in range(recording.get_num_segments()):
                                 ts_lfp = (
-                                    np.arange(recording_lfp.get_num_samples(segment_index))
+                                    np.arange(recording_lfp.get_num_samples(sg_idx))
                                     / recording_lfp.sampling_frequency
-                                    - recording.get_times(segment_index)[0]
+                                    - recording.get_times(sg_idx)[0]
                                     + lfp_period / 2
                                 )
-                                recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
+                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx, with_warning=False)
                             save_to_binary = True
                         else:
                             print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
@@ -560,7 +560,7 @@ if __name__ == "__main__":
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
                             print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-                            lfp_times = recording_lfp.get_times()
+                            lfp_times = recording_lfp.get_times(segment_index=segment_index)
                             recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
                             recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
 
