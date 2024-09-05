@@ -309,11 +309,16 @@ if __name__ == "__main__":
                             recording_job_dicts_sorted = recording_job_dicts
                         for recording_job_dict in recording_job_dicts_sorted:
                             recording = si.load_extractor(recording_job_dict["recording_dict"], base_folder=data_folder)
+                            skip_times = recording_job_dict.get("skip_times", False)
+                            if skip_times:
+                                recording.reset_times()
                             recordings.append(recording)
                             print(f"\t\t{recording_job_dict['recording_name']}: {recording}")
                             if "recording_lfp_dict" in job_dict:
                                 print(f"\tLoading associated LFP recording")
                                 recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                if skip_times:
+                                    recording_lfp.reset_times()
                                 recordings_lfp.append(recording_lfp)
                                 print(f"\t\t{recording_lfp}")
 
