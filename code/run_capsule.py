@@ -18,8 +18,8 @@ from neuroconv.tools.nwb_helpers import (
     get_default_backend_configuration,
 )
 from neuroconv.tools.spikeinterface import (
-    add_recording,
-    add_electrodes,
+    add_recording_to_nwbfile,
+    add_electrodes_to_nwbfile,
 )
 
 from pynwb import NWBHDF5IO
@@ -291,20 +291,52 @@ if __name__ == "__main__":
                     print(f"Processing {recording_name}")
 
                     # load JSON and recordings
-                    recording_job_dict = None
-                    recording_lfp = None
+                    # we need lists because multiple groups are saved to different JSON files
+                    recording_job_dicts = []
                     for job_dict in job_dicts:
-                        if job_dict["recording_name"] == recording_name:
-                            recording_job_dict = job_dict
-                            break
-                    if recording_job_dict is not None:
-                        print(f"\tLoading recording from JSON file")
-                        recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
-                        print(f"\t\t{recording}")
-                        if "recording_lfp_dict" in job_dict:
-                            print(f"\tLoading associated LFP recording")
-                            recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
-                            print(f"\t\t{recording_lfp}")
+                        if recording_name in job_dict["recording_name"]:
+                            recording_job_dicts.append(job_dict)
+
+                    recording_lfp = None
+                    if recording_job_dicts is not None:
+                        recordings = []
+                        recordings_lfp = []
+                        print(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
+                        if len(recording_job_dicts) > 1:
+                            # in case of multiple groups, sort by group names
+                            sort_idxs = np.argsort([jd["recording_name"] for jd in recording_job_dicts])
+                            recording_job_dicts_sorted = np.array(recording_job_dicts)[sort_idxs]
+                        else:
+                            recording_job_dicts_sorted = recording_job_dicts
+                        for recording_job_dict in recording_job_dicts_sorted:
+                            recording = si.load_extractor(recording_job_dict["recording_dict"], base_folder=data_folder)
+                            skip_times = recording_job_dict.get("skip_times", False)
+                            if skip_times:
+                                recording.reset_times()
+                            recordings.append(recording)
+                            print(f"\t\t{recording_job_dict['recording_name']}: {recording}")
+                            if "recording_lfp_dict" in job_dict:
+                                print(f"\tLoading associated LFP recording")
+                                recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                if skip_times:
+                                    recording_lfp.reset_times()
+                                recordings_lfp.append(recording_lfp)
+                                print(f"\t\t{recording_lfp}")
+
+                        # for multiple groups, aggregate channels
+                        if len(recording_job_dicts_sorted) > 1:
+                            print(f"\t\tAggregating channels from {len(recordings)} groups")
+                            recording = si.aggregate_channels(recordings)
+                            # probes_info get lost in aggregation, so we need to manually set them
+                            recording.annotate(
+                                probes_info=recordings[0].get_annotation("probes_info")
+                            )
+                            if len(recordings_lfp) > 0:
+                                recording_lfp = si.aggregate_channels(recordings_lfp)
+                                recording_lfp.annotate(
+                                    probes_info=recordings_lfp[0].get_annotation("probes_info")
+                                )
+
                     else:
                         print("\tCould not find JSON file")
                         # Add Recordings
@@ -336,6 +368,8 @@ if __name__ == "__main__":
                             print(f"\tLoading associated LFP recording")
                             recording_lfp = si.split_recording(recording_multi_segment_lfp)[segment_index]
                             print(f"\t\t{recording_lfp}")
+                        else:
+                            recording_lfp = None
 
                     # Add device and electrode group
                     probe_device_name = None
@@ -447,7 +481,7 @@ if __name__ == "__main__":
                             recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
 
                         print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
-                        add_recording(
+                        add_recording_to_nwbfile(
                             recording=recording,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
@@ -457,7 +491,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -479,7 +513,7 @@ if __name__ == "__main__":
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_times = recording.get_times()
+                            recording_times = recording.get_times(segment_index=segment_index)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
                             # set times
@@ -487,7 +521,7 @@ if __name__ == "__main__":
                             lfp_start = recording_times[0] + sampling_period / 2
                             lfp_stop = recording_times[-1] - sampling_period / 2
                             num_samples = recording_lfp.get_num_samples()
-                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples))
+                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples), segment_index=segment_index, with_warning=False)
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
@@ -499,14 +533,14 @@ if __name__ == "__main__":
                                     ),
                                 )
                             lfp_period = 1.0 / lfp_sampling_rate
-                            for segment_index in range(recording.get_num_segments()):
+                            for sg_idx in range(recording.get_num_segments()):
                                 ts_lfp = (
-                                    np.arange(recording_lfp.get_num_samples(segment_index))
+                                    np.arange(recording_lfp.get_num_samples(sg_idx))
                                     / recording_lfp.sampling_frequency
-                                    - recording.get_times(segment_index)[0]
+                                    - recording.get_times(sg_idx)[0]
                                     + lfp_period / 2
                                 )
-                                recording_lfp.set_times(ts_lfp, segment_index=segment_index, with_warning=False)
+                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx, with_warning=False)
                             save_to_binary = True
                         else:
                             print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
@@ -540,9 +574,9 @@ if __name__ == "__main__":
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
                             print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-                            lfp_times = recording_lfp.get_times()
+                            lfp_times = recording_lfp.get_times(segment_index=segment_index)
                             recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
-                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR])
+                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=segment_index, with_warning=False)
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
@@ -564,7 +598,7 @@ if __name__ == "__main__":
                             )
 
                         print(f"\tAdding LFP recording {recording_lfp}")
-                        add_recording(
+                        add_recording_to_nwbfile(
                             recording=recording_lfp,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
