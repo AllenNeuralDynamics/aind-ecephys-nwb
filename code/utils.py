@@ -65,8 +65,8 @@ def get_devices_from_rig_metadata(session_folder: str, segment_index: int = 0):
         return None, None
 
     stimulus_epochs = session.get("stimulus_epochs", None)
+    stimulus_device_names = []
     if stimulus_epochs is not None:
-        stimulus_device_names = []
         for epoch in stimulus_epochs:
             stimulus_device_names += epoch.get("stimulus_device_names", [])
 
