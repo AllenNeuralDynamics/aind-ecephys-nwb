@@ -486,6 +486,7 @@ if __name__ == "__main__":
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
                             compression=None,
+                            always_write_timestamps=True,
                             **add_electrical_series_kwargs,
                         )
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
@@ -603,6 +604,7 @@ if __name__ == "__main__":
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
                             compression=None,
+                            always_write_timestamps=True,
                             **add_electrical_lfp_series_kwargs,
                         )
                         electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
