@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import os
 import json
+import time
 
 import spikeinterface as si
 import spikeinterface.extractors as se
@@ -102,6 +103,9 @@ lfp_surface_channel_agar_group.add_argument(
 )
 
 if __name__ == "__main__":
+    print("\n\nNWB EXPORT ECEPHYS")
+    t_export_start = time.perf_counter()
+
     args = parser.parse_args()
 
     stub = args.stub or args.static_stub
@@ -627,7 +631,15 @@ if __name__ == "__main__":
                 else:
                     write_args = {}
 
+                t_write_start = time.perf_counter()
                 with io_class(str(nwbfile_output_path), "w") as export_io:
                     export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
+                t_write_end = time.perf_counter()
+                elapsed_time_write = np.round(t_write_end - t_write_start, 2)
+                print(f"Writing time: {elapsed_time_write}s")
                 print(f"Done writing {nwbfile_output_path}")
                 nwb_output_files.append(nwbfile_output_path)
+
+    t_export_end = time.perf_counter()
+    elapsed_time_export = np.round(t_export_end - t_export_start, 2)
+    print(f"NWB EXPORT ECEPHYS time: {elapsed_time_export}s")
