@@ -518,15 +518,8 @@ if __name__ == "__main__":
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_times = recording.get_times(segment_index=segment_index)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
-                            # set times
-                            sampling_period = 1. / lfp_sampling_rate
-                            lfp_start = recording_times[0] + sampling_period / 2
-                            lfp_stop = recording_times[-1] - sampling_period / 2
-                            num_samples = recording_lfp.get_num_samples()
-                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples), segment_index=segment_index, with_warning=False)
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
@@ -537,6 +530,7 @@ if __name__ == "__main__":
                                         recording_lfp.get_num_samples() // lfp_sampling_rate * lfp_sampling_rate
                                     ),
                                 )
+                            # set times
                             lfp_period = 1.0 / lfp_sampling_rate
                             for sg_idx in range(recording.get_num_segments()):
                                 ts_lfp = (
