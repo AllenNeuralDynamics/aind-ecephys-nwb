@@ -573,9 +573,10 @@ if __name__ == "__main__":
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
                             print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-                            lfp_times = recording_lfp.get_times(segment_index=segment_index)
                             recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
-                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=segment_index, with_warning=False)
+                            for sg_idx in range(recording.get_num_segments()):
+                                lfp_times = recording_lfp.get_times(segment_index=sg_idx)
+                                recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx, with_warning=False)
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
