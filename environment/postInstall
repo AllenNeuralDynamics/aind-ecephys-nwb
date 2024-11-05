@@ -6,3 +6,9 @@ cd neuroconv
 git checkout 0cc66de36d91b43f718507c97447ca56382dcb74
 pip install .
 cd ..
+
+git clone https://github.com/alejoe91/spikeinterface.git
+cd spikeinterface
+git checkout f90011803da2327d7ace74ff2a35b91b30c70d32
+pip install .[full]
+cd ..
