@@ -70,12 +70,13 @@ def get_devices_from_rig_metadata(session_folder: str, segment_index: int = 0):
         for epoch in stimulus_epochs:
             stimulus_device_names += epoch.get("stimulus_device_names", [])
 
+    devices = None
+    devices_target_location = None
     if rig is not None:
         rig_schema_version = rig.get("schema_version", None)
         if rig_schema_version is None:
             warnings.warn(f"Rig file does not have schema_version")
-            return None, None
-        if parse(rig_schema_version) >= parse("0.5.1"):
+        else if parse(rig_schema_version) >= parse("0.5.1"):
             ephys_modules = session["data_streams"][segment_index]["ephys_modules"]
             ephys_assemblies = rig.get("ephys_assemblies", [])
             laser_assemblies = rig.get("laser_assemblies", [])

@@ -7,8 +7,8 @@ git checkout 0cc66de36d91b43f718507c97447ca56382dcb74
 pip install .
 cd ..
 
-git clone https://github.com/alejoe91/spikeinterface.git
+git clone https://github.com/SpikeInterface/spikeinterface.git
 cd spikeinterface
-git checkout f90011803da2327d7ace74ff2a35b91b30c70d32
+git checkout 8a7895e959118dc2d82e810397dad671fc0b9859
 pip install .[full]
 cd ..
