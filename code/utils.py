@@ -76,7 +76,7 @@ def get_devices_from_rig_metadata(session_folder: str, segment_index: int = 0):
         rig_schema_version = rig.get("schema_version", None)
         if rig_schema_version is None:
             warnings.warn(f"Rig file does not have schema_version")
-        else if parse(rig_schema_version) >= parse("0.5.1"):
+        elif parse(rig_schema_version) >= parse("0.5.1"):
             ephys_modules = session["data_streams"][segment_index]["ephys_modules"]
             ephys_assemblies = rig.get("ephys_assemblies", [])
             laser_assemblies = rig.get("laser_assemblies", [])
