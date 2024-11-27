@@ -1,5 +1,8 @@
 metadata_version: 1
 name: NWB-Packaging-Ecephys
 description: Basic structure of a capsule to be customized as needed.
+tags:
+- NWB
+- Ecephys
 authors:
 - name: AIND
