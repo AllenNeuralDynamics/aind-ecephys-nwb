@@ -29,6 +29,15 @@ from hdmf_zarr import NWBZarrIO
 
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
 from numcodecs import Blosc
+
+# AIND
+try:
+    from aind_log_utils import log
+
+    HAVE_AIND_LOG_UTILS = True
+except ImportError:
+    HAVE_AIND_LOG_UTILS = False
+
 from utils import get_devices_from_rig_metadata
 
 
@@ -172,8 +181,27 @@ if __name__ == "__main__":
         and ("sorted" not in p.name and "nwb" not in p.name)
     ]
     assert len(ecephys_folders) == 1, "Attach one ecephys folder at a time"
-    ecephys_folder = ecephys_folders[0]
-    session_name = ecephys_folder.name
+    ecephys_session_folder = ecephys_folders[0]
+    session_name = ecephys_session_folder.name
+    if HAVE_AIND_LOG_UTILS:
+        # look for subject.json and data_description.json files
+        subject_json = ecephys_session_folder / "subject.json"
+        subject_id = "undefined"
+        if subject_json.is_file():
+            subject_data = json.load(open(subject_json, "r"))
+            subject_id = subject_data["subject_id"]
+
+        data_description_json = ecephys_session_folder / "data_description.json"
+        session_name = "undefined"
+        if data_description_json.is_file():
+            data_description = json.load(open(data_description_json, "r"))
+            session_name = data_description["name"]
+
+        log.setup_logging(
+            "NWB Packaging Ecephys",
+            mouse_id=subject_id,
+            session_name=session_name,
+        )
 
     print(f"\nExporting session: {session_name}")
 
@@ -188,16 +216,16 @@ if __name__ == "__main__":
     if len(job_dicts) == 0:
         print("Standalone mode!")
         # AIND-specific section to parse AIND files
-        if (ecephys_folder / "ecephys_clipped").is_dir():
-            oe_folder = ecephys_folder / "ecephys_clipped"
-            compressed_folder = ecephys_folder / "ecephys_compressed"
+        if (ecephys_session_folder / "ecephys_clipped").is_dir():
+            oe_folder = ecephys_session_folder / "ecephys_clipped"
+            compressed_folder = ecephys_session_folder / "ecephys_compressed"
         else:
-            assert (ecephys_folder / "ecephys").is_dir()
-            if (ecephys_folder / "ecephys" / "ecephys_compressed").is_dir():
-                oe_folder = ecephys_folder / "ecephys" / "ecephys_clipped"
-                compressed_folder = ecephys_folder / "ecephys" / "ecephys_compressed"
+            assert (ecephys_session_folder / "ecephys").is_dir()
+            if (ecephys_session_folder / "ecephys" / "ecephys_compressed").is_dir():
+                oe_folder = ecephys_session_folder / "ecephys" / "ecephys_clipped"
+                compressed_folder = ecephys_session_folder / "ecephys" / "ecephys_compressed"
             else:
-                oe_folder = ecephys_folder / "ecephys"
+                oe_folder = ecephys_session_folder / "ecephys"
                 compressed_folder = None
 
         # Read Open Ephys Folder structure with NEO
@@ -282,7 +310,7 @@ if __name__ == "__main__":
 
             # Find probe devices (this will only work for AIND)
             devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                ecephys_folder, segment_index=segment_index
+                ecephys_session_folder, segment_index=segment_index
             )
 
             # write 1 new nwb file per segment
