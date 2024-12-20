@@ -113,7 +113,6 @@ lfp_surface_channel_agar_group.add_argument(
 )
 
 if __name__ == "__main__":
-    logging.info("\n\nNWB EXPORT ECEPHYS")
     t_export_start = time.perf_counter()
 
     args = parser.parse_args()
@@ -181,6 +180,8 @@ if __name__ == "__main__":
         )
     else:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    logging.info("\n\nNWB EXPORT ECEPHYS")
 
     logging.info(f"Running NWB conversion with the following parameters:")
     logging.info(f"Stub test: {STUB_TEST}")
