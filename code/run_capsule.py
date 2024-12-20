@@ -149,30 +149,6 @@ if __name__ == "__main__":
     else:
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
 
-    logging.info(f"Running NWB conversion with the following parameters:")
-    logging.info(f"Stub test: {STUB_TEST}")
-    logging.info(f"Stub seconds: {STUB_SECONDS}")
-    logging.info(f"Write LFP: {WRITE_LFP}")
-    logging.info(f"Write RAW: {WRITE_RAW}")
-    logging.info(f"Temporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-    logging.info(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
-    logging.info(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-    logging.info(f"Surface channel indices for agar probes: {SURFACE_CHANNEL_AGAR_PROBES_INDICES}")
-
-    # find base NWB file
-    nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
-    assert len(nwb_files) == 1, "Attach one base NWB file data at a time"
-    nwbfile_input_path = nwb_files[0]
-
-    if nwbfile_input_path.is_dir():
-        assert (nwbfile_input_path / ".zattrs").is_file(), f"{nwbfile_input_path.name} is not a valid Zarr folder"
-        NWB_BACKEND = "zarr"
-        io_class = NWBZarrIO
-    else:
-        NWB_BACKEND = "hdf5"
-        io_class = NWBHDF5IO
-    logging.info(f"NWB backend: {NWB_BACKEND}")
-
     # find raw data
     ecephys_folders = [
         p
@@ -203,6 +179,32 @@ if __name__ == "__main__":
             mouse_id=subject_id,
             session_name=session_name,
         )
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    logging.info(f"Running NWB conversion with the following parameters:")
+    logging.info(f"Stub test: {STUB_TEST}")
+    logging.info(f"Stub seconds: {STUB_SECONDS}")
+    logging.info(f"Write LFP: {WRITE_LFP}")
+    logging.info(f"Write RAW: {WRITE_RAW}")
+    logging.info(f"Temporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
+    logging.info(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
+    logging.info(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
+    logging.info(f"Surface channel indices for agar probes: {SURFACE_CHANNEL_AGAR_PROBES_INDICES}")
+
+    # find base NWB file
+    nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
+    assert len(nwb_files) == 1, "Attach one base NWB file data at a time"
+    nwbfile_input_path = nwb_files[0]
+
+    if nwbfile_input_path.is_dir():
+        assert (nwbfile_input_path / ".zattrs").is_file(), f"{nwbfile_input_path.name} is not a valid Zarr folder"
+        NWB_BACKEND = "zarr"
+        io_class = NWBZarrIO
+    else:
+        NWB_BACKEND = "hdf5"
+        io_class = NWBHDF5IO
+    logging.info(f"NWB backend: {NWB_BACKEND}")
 
     logging.info(f"\nExporting session: {session_name}")
 
