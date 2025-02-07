@@ -346,15 +346,15 @@ if __name__ == "__main__":
                         else:
                             recording_job_dicts_sorted = recording_job_dicts
                         for recording_job_dict in recording_job_dicts_sorted:
-                            recording = si.load_extractor(recording_job_dict["recording_dict"], base_folder=data_folder)
+                            recording = si.load(recording_job_dict["recording_dict"], base_folder=data_folder)
                             skip_times = recording_job_dict.get("skip_times", False)
                             if skip_times:
                                 recording.reset_times()
                             recordings.append(recording)
-                            logging.info(f"\t\t{recording_job_dict['recording_name']}: {recording}")
+                            logging.info(f"\t\t{recording_job_dict['recording_name']}")
                             if "recording_lfp_dict" in job_dict:
                                 logging.info(f"\tLoading associated LFP recording")
-                                recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                recording_lfp = si.load(job_dict["recording_lfp_dict"], base_folder=data_folder)
                                 if skip_times:
                                     recording_lfp.reset_times()
                                 recordings_lfp.append(recording_lfp)
@@ -407,6 +407,13 @@ if __name__ == "__main__":
                             logging.info(f"\t\t{recording_lfp}")
                         else:
                             recording_lfp = None
+
+                    if STUB_TEST:
+                        end_frame = int(STUB_SECONDS * recording.sampling_frequency)
+                        recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
+                        if recording_lfp is not None:
+                            end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
+                            recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
                     # Add device and electrode group
                     probe_device_name = None
@@ -488,18 +495,34 @@ if __name__ == "__main__":
                     electrode_metadata = dict(
                         Ecephys=dict(
                             Device=[dict(name=probe_device_name)],
-                            ElectrodeGroup=[
-                                dict(
-                                    name=probe_device_name,
-                                    description=f"Recorded electrodes from probe {probe_device_name}",
-                                    location=electrode_group_location,
-                                    device=probe_device_name,
-                                )
-                            ],
                         )
                     )
                     # Add channel properties (group_name property to associate electrodes with group)
-                    recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                    channel_groups = recording.get_channel_groups()
+                    if len(np.unique(channel_groups)) == 1:
+                        recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                        electrode_groups_metadata = [
+                            dict(
+                                name=probe_device_name,
+                                description=f"Recorded electrodes from probe {probe_device_name}",
+                                location=electrode_group_location,
+                                device=probe_device_name,
+                            )
+                        ]
+                    else:
+                        recording.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
+                        channel_groups = np.unique(recording.get_channel_groups())
+                        electrode_groups_metadata = [
+                            dict(
+                                name=f"{probe_device_name}_group{g}",
+                                description=f"Recorded electrodes from probe {g}",
+                                location=electrode_group_location,
+                                device=probe_device_name,
+                            )
+                            for g in channel_groups
+                        ]
+                    electrode_metadata["Ecephys"]["ElectrodeGroup"] = electrode_groups_metadata
+
                     if WRITE_RAW:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}"
                         electrical_series_metadata = {
@@ -513,16 +536,11 @@ if __name__ == "__main__":
                             es_key=f"ElectricalSeries{probe_device_name}", write_as="raw"
                         )
 
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording.sampling_frequency)
-                            recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
-
                         logging.info(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
                         add_recording_to_nwbfile(
                             recording=recording,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
-                            compression=None,
                             always_write_timestamps=True,
                             **add_electrical_series_kwargs,
                         )
@@ -577,6 +595,13 @@ if __name__ == "__main__":
                         else:
                             logging.info(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
                             save_to_binary = False
+                            # In this case, since LFPs are in a separate stream, we have to reset channel groups
+                            channel_groups = recording_lfp.get_channel_groups()
+                            if len(np.unique(channel_groups)) == 1:
+                                recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
+                            else:
+                                recording_lfp.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
+
                         channel_ids = recording_lfp.get_channel_ids()
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
@@ -617,13 +642,6 @@ if __name__ == "__main__":
                             logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
                             recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
 
-                        # Assign to the correct channel group
-                        recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
-
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
-                            recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
-
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
@@ -636,7 +654,6 @@ if __name__ == "__main__":
                             recording=recording_lfp,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
-                            compression=None,
                             always_write_timestamps=True,
                             **add_electrical_lfp_series_kwargs,
                         )
