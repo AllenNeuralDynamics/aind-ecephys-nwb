@@ -1,10 +1,13 @@
 """ Writes RAW ephys and LFP to an NWB file """
 
+import sys
 import argparse
 from pathlib import Path
 import numpy as np
 import os
 import json
+import time
+import logging
 
 import spikeinterface as si
 import spikeinterface.extractors as se
@@ -28,6 +31,15 @@ from hdmf_zarr import NWBZarrIO
 
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
 from numcodecs import Blosc
+
+# AIND
+try:
+    from aind_log_utils import log
+
+    HAVE_AIND_LOG_UTILS = True
+except ImportError:
+    HAVE_AIND_LOG_UTILS = False
+
 from utils import get_devices_from_rig_metadata
 
 
@@ -102,6 +114,8 @@ lfp_surface_channel_agar_group.add_argument(
 )
 
 if __name__ == "__main__":
+    t_export_start = time.perf_counter()
+
     args = parser.parse_args()
 
     stub = args.stub or args.static_stub
@@ -135,15 +149,50 @@ if __name__ == "__main__":
     else:
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
 
-    print(f"Running NWB conversion with the following parameters:")
-    print(f"Stub test: {STUB_TEST}")
-    print(f"Stub seconds: {STUB_SECONDS}")
-    print(f"Write LFP: {WRITE_LFP}")
-    print(f"Write RAW: {WRITE_RAW}")
-    print(f"Temporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-    print(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
-    print(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-    print(f"Surface channel indices for agar probes: {SURFACE_CHANNEL_AGAR_PROBES_INDICES}")
+    # find raw data
+    ecephys_folders = [
+        p
+        for p in data_folder.iterdir()
+        if p.is_dir()
+        and ("ecephys" in p.name or "behavior" in p.name)
+        and ("sorted" not in p.name and "nwb" not in p.name)
+    ]
+    assert len(ecephys_folders) == 1, "Attach one ecephys folder at a time"
+    ecephys_session_folder = ecephys_folders[0]
+    session_name = ecephys_session_folder.name
+    if HAVE_AIND_LOG_UTILS:
+        # look for subject.json and data_description.json files
+        subject_json = ecephys_session_folder / "subject.json"
+        subject_id = "undefined"
+        if subject_json.is_file():
+            subject_data = json.load(open(subject_json, "r"))
+            subject_id = subject_data["subject_id"]
+
+        data_description_json = ecephys_session_folder / "data_description.json"
+        session_name = "undefined"
+        if data_description_json.is_file():
+            data_description = json.load(open(data_description_json, "r"))
+            session_name = data_description["name"]
+
+        log.setup_logging(
+            "NWB Packaging Ecephys",
+            subject_id=subject_id,
+            asset_name=session_name,
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(message)s")
+
+    logging.info("\n\nNWB EXPORT ECEPHYS")
+
+    logging.info(f"Running NWB conversion with the following parameters:")
+    logging.info(f"Stub test: {STUB_TEST}")
+    logging.info(f"Stub seconds: {STUB_SECONDS}")
+    logging.info(f"Write LFP: {WRITE_LFP}")
+    logging.info(f"Write RAW: {WRITE_RAW}")
+    logging.info(f"Temporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
+    logging.info(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
+    logging.info(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
+    logging.info(f"Surface channel indices for agar probes: {SURFACE_CHANNEL_AGAR_PROBES_INDICES}")
 
     # find base NWB file
     nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
@@ -157,21 +206,9 @@ if __name__ == "__main__":
     else:
         NWB_BACKEND = "hdf5"
         io_class = NWBHDF5IO
-    print(f"NWB backend: {NWB_BACKEND}")
+    logging.info(f"NWB backend: {NWB_BACKEND}")
 
-    # find raw data
-    ecephys_folders = [
-        p
-        for p in data_folder.iterdir()
-        if p.is_dir()
-        and ("ecephys" in p.name or "behavior" in p.name)
-        and ("sorted" not in p.name and "nwb" not in p.name)
-    ]
-    assert len(ecephys_folders) == 1, "Attach one ecephys folder at a time"
-    ecephys_folder = ecephys_folders[0]
-    session_name = ecephys_folder.name
-
-    print(f"\nExporting session: {session_name}")
+    logging.info(f"\nExporting session: {session_name}")
 
     job_json_files = [p for p in data_folder.iterdir() if p.suffix == ".json" and "job" in p.name]
     job_dicts = []
@@ -179,28 +216,28 @@ if __name__ == "__main__":
         with open(job_json_file) as f:
             job_dict = json.load(f)
         job_dicts.append(job_dict)
-    print(f"Found {len(job_dicts)} JSON job files")
+    logging.info(f"Found {len(job_dicts)} JSON job files")
 
     if len(job_dicts) == 0:
-        print("Standalone mode!")
+        logging.info("Standalone mode!")
         # AIND-specific section to parse AIND files
-        if (ecephys_folder / "ecephys_clipped").is_dir():
-            oe_folder = ecephys_folder / "ecephys_clipped"
-            compressed_folder = ecephys_folder / "ecephys_compressed"
+        if (ecephys_session_folder / "ecephys_clipped").is_dir():
+            oe_folder = ecephys_session_folder / "ecephys_clipped"
+            compressed_folder = ecephys_session_folder / "ecephys_compressed"
         else:
-            assert (ecephys_folder / "ecephys").is_dir()
-            if (ecephys_folder / "ecephys" / "ecephys_compressed").is_dir():
-                oe_folder = ecephys_folder / "ecephys" / "ecephys_clipped"
-                compressed_folder = ecephys_folder / "ecephys" / "ecephys_compressed"
+            assert (ecephys_session_folder / "ecephys").is_dir()
+            if (ecephys_session_folder / "ecephys" / "ecephys_compressed").is_dir():
+                oe_folder = ecephys_session_folder / "ecephys" / "ecephys_clipped"
+                compressed_folder = ecephys_session_folder / "ecephys" / "ecephys_compressed"
             else:
-                oe_folder = ecephys_folder / "ecephys"
+                oe_folder = ecephys_session_folder / "ecephys"
                 compressed_folder = None
 
         # Read Open Ephys Folder structure with NEO
         neo_io = OpenEphysBinaryRawIO(oe_folder)
         neo_io.parse_header()
         num_blocks = neo_io.block_count()
-        print(f"Number of experiments: {num_blocks}")
+        logging.info(f"Number of experiments: {num_blocks}")
         stream_names = neo_io.header["signal_streams"]["name"]
         record_nodes = list(neo_io.folder_structure.keys())
         experiment_ids = [eid for eid in neo_io.folder_structure[record_nodes[0]]["experiments"].keys()]
@@ -254,9 +291,9 @@ if __name__ == "__main__":
     recording_ids = sorted(recording_ids)
     streams_to_process = sorted(streams_to_process)
 
-    print(f"Number of NWB files to write: {len(block_ids) * len(recording_ids)}")
+    logging.info(f"Number of NWB files to write: {len(block_ids) * len(recording_ids)}")
 
-    print(f"Number of streams to write for each file: {len(streams_to_process)}")
+    logging.info(f"Number of streams to write for each file: {len(streams_to_process)}")
 
     # Construct 1 nwb file per experiment - streams are concatenated!
     nwb_output_files = []
@@ -278,7 +315,7 @@ if __name__ == "__main__":
 
             # Find probe devices (this will only work for AIND)
             devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                ecephys_folder, segment_index=segment_index
+                ecephys_session_folder, segment_index=segment_index
             )
 
             # write 1 new nwb file per segment
@@ -288,7 +325,7 @@ if __name__ == "__main__":
                 probe_device_names = []
                 for stream_index, stream_name in enumerate(streams_to_process):
                     recording_name = f"{block_str}_{stream_name}_{recording_str}"
-                    print(f"Processing {recording_name}")
+                    logging.info(f"Processing {recording_name}")
 
                     # load JSON and recordings
                     # we need lists because multiple groups are saved to different JSON files
@@ -301,7 +338,7 @@ if __name__ == "__main__":
                     if recording_job_dicts is not None:
                         recordings = []
                         recordings_lfp = []
-                        print(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
+                        logging.info(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
                         if len(recording_job_dicts) > 1:
                             # in case of multiple groups, sort by group names
                             sort_idxs = np.argsort([jd["recording_name"] for jd in recording_job_dicts])
@@ -309,23 +346,23 @@ if __name__ == "__main__":
                         else:
                             recording_job_dicts_sorted = recording_job_dicts
                         for recording_job_dict in recording_job_dicts_sorted:
-                            recording = si.load_extractor(recording_job_dict["recording_dict"], base_folder=data_folder)
+                            recording = si.load(recording_job_dict["recording_dict"], base_folder=data_folder)
                             skip_times = recording_job_dict.get("skip_times", False)
                             if skip_times:
                                 recording.reset_times()
                             recordings.append(recording)
-                            print(f"\t\t{recording_job_dict['recording_name']}: {recording}")
+                            logging.info(f"\t\t{recording_job_dict['recording_name']}")
                             if "recording_lfp_dict" in job_dict:
-                                print(f"\tLoading associated LFP recording")
-                                recording_lfp = si.load_extractor(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                logging.info(f"\tLoading associated LFP recording")
+                                recording_lfp = si.load(job_dict["recording_lfp_dict"], base_folder=data_folder)
                                 if skip_times:
                                     recording_lfp.reset_times()
                                 recordings_lfp.append(recording_lfp)
-                                print(f"\t\t{recording_lfp}")
+                                logging.info(f"\t\t{recording_lfp}")
 
                         # for multiple groups, aggregate channels
                         if len(recording_job_dicts_sorted) > 1:
-                            print(f"\t\tAggregating channels from {len(recordings)} groups")
+                            logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
                             recording = si.aggregate_channels(recordings)
                             # probes_info get lost in aggregation, so we need to manually set them
                             recording.annotate(
@@ -338,7 +375,7 @@ if __name__ == "__main__":
                                 )
 
                     else:
-                        print("\tCould not find JSON file")
+                        logging.info("\tCould not find JSON file")
                         # Add Recordings
                         recording_multi_segment_lfp = None
                         if compressed_folder is not None:
@@ -361,15 +398,22 @@ if __name__ == "__main__":
                                 )
                             except:
                                 pass
-                        print(f"\tLoading recording from AIND raw data")
+                        logging.info(f"\tLoading recording from AIND raw data")
                         recording = si.split_recording(recording_multi_segment)[segment_index]
-                        print(f"\t\t{recording}")
+                        logging.info(f"\t\t{recording}")
                         if recording_multi_segment_lfp is not None:
-                            print(f"\tLoading associated LFP recording")
+                            logging.info(f"\tLoading associated LFP recording")
                             recording_lfp = si.split_recording(recording_multi_segment_lfp)[segment_index]
-                            print(f"\t\t{recording_lfp}")
+                            logging.info(f"\t\t{recording_lfp}")
                         else:
                             recording_lfp = None
+
+                    if STUB_TEST:
+                        end_frame = int(STUB_SECONDS * recording.sampling_frequency)
+                        recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
+                        if recording_lfp is not None:
+                            end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
+                            recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
                     # Add device and electrode group
                     probe_device_name = None
@@ -383,7 +427,7 @@ if __name__ == "__main__":
                             if probe_no_spaces in stream_name:
                                 probe_device_name = device_name
                                 electrode_group_location = target_locations.get(device_name, "unknown")
-                                print(
+                                logging.info(
                                     f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
                                 )
                                 break
@@ -436,10 +480,10 @@ if __name__ == "__main__":
                         )
                         if probe_device_name not in nwbfile.devices:
                             nwbfile.add_device(probe_device)
-                            print(f"\tAdded probe device: {probe_device.name} from recording metadata")
+                            logging.info(f"\tAdded probe device: {probe_device.name} from recording metadata")
                     # last resort: could not find a device
                     if probe_device_name is None:
-                        print("\tCould not load device information: using default Device")
+                        logging.info("\tCould not load device information: using default Device")
                         probe_device_name = "Device"
                         if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
                             probe_device_name = f"{probe_device_name}-{stream_index}"
@@ -451,18 +495,34 @@ if __name__ == "__main__":
                     electrode_metadata = dict(
                         Ecephys=dict(
                             Device=[dict(name=probe_device_name)],
-                            ElectrodeGroup=[
-                                dict(
-                                    name=probe_device_name,
-                                    description=f"Recorded electrodes from probe {probe_device_name}",
-                                    location=electrode_group_location,
-                                    device=probe_device_name,
-                                )
-                            ],
                         )
                     )
                     # Add channel properties (group_name property to associate electrodes with group)
-                    recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                    channel_groups = recording.get_channel_groups()
+                    if len(np.unique(channel_groups)) == 1:
+                        recording.set_channel_groups([probe_device_name] * recording.get_num_channels())
+                        electrode_groups_metadata = [
+                            dict(
+                                name=probe_device_name,
+                                description=f"Recorded electrodes from probe {probe_device_name}",
+                                location=electrode_group_location,
+                                device=probe_device_name,
+                            )
+                        ]
+                    else:
+                        recording.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
+                        channel_groups = np.unique(recording.get_channel_groups())
+                        electrode_groups_metadata = [
+                            dict(
+                                name=f"{probe_device_name}_group{g}",
+                                description=f"Recorded electrodes from probe {g}",
+                                location=electrode_group_location,
+                                device=probe_device_name,
+                            )
+                            for g in channel_groups
+                        ]
+                    electrode_metadata["Ecephys"]["ElectrodeGroup"] = electrode_groups_metadata
+
                     if WRITE_RAW:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}"
                         electrical_series_metadata = {
@@ -476,16 +536,11 @@ if __name__ == "__main__":
                             es_key=f"ElectricalSeries{probe_device_name}", write_as="raw"
                         )
 
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording.sampling_frequency)
-                            recording = recording.frame_slice(start_frame=0, end_frame=end_frame)
-
-                        print(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
+                        logging.info(f"\tAdding RAW data for stream {stream_name} - segment {segment_index}")
                         add_recording_to_nwbfile(
                             recording=recording,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
-                            compression=None,
                             always_write_timestamps=True,
                             **add_electrical_series_kwargs,
                         )
@@ -510,19 +565,12 @@ if __name__ == "__main__":
 
                         if recording_lfp is None:
                             # Wide-band recording: filter and resample LFP
-                            print(
+                            logging.info(
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_times = recording.get_times(segment_index=segment_index)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
-                            # set times
-                            sampling_period = 1. / lfp_sampling_rate
-                            lfp_start = recording_times[0] + sampling_period / 2
-                            lfp_stop = recording_times[-1] - sampling_period / 2
-                            num_samples = recording_lfp.get_num_samples()
-                            recording_lfp.set_times(np.linspace(lfp_start, lfp_stop, num_samples), segment_index=segment_index, with_warning=False)
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
                             # the workaround is to discard the last samples to make it "even"
@@ -533,6 +581,7 @@ if __name__ == "__main__":
                                         recording_lfp.get_num_samples() // lfp_sampling_rate * lfp_sampling_rate
                                     ),
                                 )
+                            # set times
                             lfp_period = 1.0 / lfp_sampling_rate
                             for sg_idx in range(recording.get_num_segments()):
                                 ts_lfp = (
@@ -544,15 +593,22 @@ if __name__ == "__main__":
                                 recording_lfp.set_times(ts_lfp, segment_index=sg_idx, with_warning=False)
                             save_to_binary = True
                         else:
-                            print(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
+                            logging.info(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
                             save_to_binary = False
+                            # In this case, since LFPs are in a separate stream, we have to reset channel groups
+                            channel_groups = recording_lfp.get_channel_groups()
+                            if len(np.unique(channel_groups)) == 1:
+                                recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
+                            else:
+                                recording_lfp.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
+
                         channel_ids = recording_lfp.get_channel_ids()
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
                         # similar processing to allensdk
                         if SURFACE_CHANNEL_AGAR_PROBES_INDICES is not None:
                             if probe_device_name in SURFACE_CHANNEL_AGAR_PROBES_INDICES:
-                                print(f"\t\tCommon median referencing for probe {probe_device_name}")
+                                logging.info(f"\t\tCommon median referencing for probe {probe_device_name}")
                                 surface_channel_index = SURFACE_CHANNEL_AGAR_PROBES_INDICES[probe_device_name]
                                 # get indices of channels out of brain including surface channel
                                 reference_channel_indices = np.arange(surface_channel_index, len(channel_ids))
@@ -564,53 +620,47 @@ if __name__ == "__main__":
                                     ref_channel_ids=reference_channel_ids,
                                 )
                             else:
-                                print(f"Could not find {probe_device_name} in surface channel dictionary")
+                                logging.info(f"Could not find {probe_device_name} in surface channel dictionary")
 
                         # spatial subsampling from allensdk - keep every nth channel
                         if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
-                            print(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
+                            logging.info(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
                             channel_ids_to_keep = channel_ids[0 : len(channel_ids) : SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
                             recording_lfp = recording_lfp.channel_slice(channel_ids_to_keep)
 
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
-                            print(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
-                            lfp_times = recording_lfp.get_times(segment_index=segment_index)
-                            recording_lfp = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
-                            recording_lfp.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=segment_index, with_warning=False)
+                            logging.info(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
+                            recording_lfp_sub = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
+                            for sg_idx in range(recording.get_num_segments()):
+                                lfp_times = recording_lfp.get_times(segment_index=sg_idx)
+                                recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx, with_warning=False)
+                            recording_lfp = recording_lfp_sub
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
-                            print(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
+                            logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
                             recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
-
-                        # Assign to the correct channel group
-                        recording_lfp.set_channel_groups([probe_device_name] * recording_lfp.get_num_channels())
-
-                        if STUB_TEST:
-                            end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
-                            recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
-                            print(f"\tSaving preprocessed LFP to binary")
+                            logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
                                 folder=scratch_folder / f"{recording_name}-LFP", verbose=False
                             )
 
-                        print(f"\tAdding LFP recording {recording_lfp}")
+                        logging.info(f"\tAdding LFP recording {recording_lfp}")
                         add_recording_to_nwbfile(
                             recording=recording_lfp,
                             nwbfile=nwbfile,
                             metadata=electrode_metadata,
-                            compression=None,
                             always_write_timestamps=True,
                             **add_electrical_lfp_series_kwargs,
                         )
                         electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
 
-                print(f"Added {len(streams_to_process)} streams")
-                print(f"Configuring {NWB_BACKEND} backend")
+                logging.info(f"Added {len(streams_to_process)} streams")
+                logging.info(f"Configuring {NWB_BACKEND} backend")
                 backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)
                 es_compressor = default_electrical_series_compressors[NWB_BACKEND]
 
@@ -619,7 +669,7 @@ if __name__ == "__main__":
                         backend_configuration.dataset_configurations[key].compression_method = es_compressor
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
-                print(f"Writing NWB file to {nwbfile_output_path}")
+                logging.info(f"Writing NWB file to {nwbfile_output_path}")
                 if NWB_BACKEND == "zarr":
                     write_args = {"link_data": False}
                     # TODO: enable parallel write for Zarr
@@ -627,7 +677,15 @@ if __name__ == "__main__":
                 else:
                     write_args = {}
 
+                t_write_start = time.perf_counter()
                 with io_class(str(nwbfile_output_path), "w") as export_io:
                     export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
-                print(f"Done writing {nwbfile_output_path}")
+                t_write_end = time.perf_counter()
+                elapsed_time_write = np.round(t_write_end - t_write_start, 2)
+                logging.info(f"Writing time: {elapsed_time_write}s")
+                logging.info(f"Done writing {nwbfile_output_path}")
                 nwb_output_files.append(nwbfile_output_path)
+
+    t_export_end = time.perf_counter()
+    elapsed_time_export = np.round(t_export_end - t_export_start, 2)
+    logging.info(f"NWB EXPORT ECEPHYS time: {elapsed_time_export}s")
