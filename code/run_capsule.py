@@ -218,6 +218,9 @@ if __name__ == "__main__":
         job_dicts.append(job_dict)
     logging.info(f"Found {len(job_dicts)} JSON job files")
 
+    # check for timestamps to overwrite recording timestamps
+    timestamps_folder = data_folder / "timestamps"
+
     if len(job_dicts) == 0:
         logging.info("Standalone mode!")
         # AIND-specific section to parse AIND files
@@ -347,16 +350,27 @@ if __name__ == "__main__":
                             recording_job_dicts_sorted = recording_job_dicts
                         for recording_job_dict in recording_job_dicts_sorted:
                             recording = si.load(recording_job_dict["recording_dict"], base_folder=data_folder)
+                            recording_name = recording_job_dict["recording_name"]
                             skip_times = recording_job_dict.get("skip_times", False)
                             if skip_times:
                                 recording.reset_times()
+                            timestamps_file = timestamps_folder / f"{recording_name}.npy"
+                            if timestamps_file.is_file():
+                                logging.info(f"\tSetting synced timestamps from {timestamps_file}")
+                                timestamps = np.load(timestamps_file)
+                                recording.set_times(timestamps)
                             recordings.append(recording)
-                            logging.info(f"\t\t{recording_job_dict['recording_name']}")
+                            logging.info(f"\t\t{recording_name}")
                             if "recording_lfp_dict" in job_dict:
                                 logging.info(f"\tLoading associated LFP recording")
                                 recording_lfp = si.load(job_dict["recording_lfp_dict"], base_folder=data_folder)
                                 if skip_times:
                                     recording_lfp.reset_times()
+                                timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
+                                if timestamps_file_lfp.is_file():
+                                    logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
+                                    timestamps_lfp = np.load(timestamps_file_lfp)
+                                    recording_lfp.set_times(timestamps_lfp)
                                 recordings_lfp.append(recording_lfp)
                                 logging.info(f"\t\t{recording_lfp}")
 
