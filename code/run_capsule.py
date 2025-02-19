@@ -352,9 +352,9 @@ if __name__ == "__main__":
                                 recording.reset_times()
                             recordings.append(recording)
                             logging.info(f"\t\t{recording_job_dict['recording_name']}")
-                            if "recording_lfp_dict" in job_dict:
+                            if "recording_lfp_dict" in recording_job_dict:
                                 logging.info(f"\tLoading associated LFP recording")
-                                recording_lfp = si.load(job_dict["recording_lfp_dict"], base_folder=data_folder)
+                                recording_lfp = si.load(recording_job_dict["recording_lfp_dict"], base_folder=data_folder)
                                 if skip_times:
                                     recording_lfp.reset_times()
                                 recordings_lfp.append(recording_lfp)
