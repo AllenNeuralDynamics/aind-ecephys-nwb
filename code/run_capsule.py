@@ -452,6 +452,18 @@ if __name__ == "__main__":
                                 model_name=probe.model_name,
                                 serial_number=probe.serial_number,
                             )
+                    else:
+                        # deal with Quad Base: the rig.json has the same name for the different shanks
+                        # but we have to load the single-shank probe device name
+                        if recording_job_dict is not None:
+                            probes_info = recording.get_annotation("probes_info", None)
+                            if probes_info is not None and len(probes_info) == 1:
+                                probe_info = probes_info[0]
+                                model_name = probe_info.get("model_name")
+                                if model_name is not None and "Quad Base" in model_name:
+                                    logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
+                                    probe_device_name = probe_info["name"]
+                        
 
                     if probe_info is not None:
                         probe_device_name = probe_info.get("name", None)
