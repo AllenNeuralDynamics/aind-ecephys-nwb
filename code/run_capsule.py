@@ -124,14 +124,23 @@ if __name__ == "__main__":
     PARAMS = args.params
 
     if PARAMS is not None:
-        STUB_TEST = PARAMS.get("stub", False)
-        STUB_SECONDS = float(PARAMS.get("stub_seconds", 10))
-        WRITE_LFP = PARAMS.get("write_lfp", True)
-        WRITE_RAW = PARAMS.get("write_raw", False)
-        TEMPORAL_SUBSAMPLING_FACTOR = int(PARAMS.get("lfp_temporal_factor", 2))
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(PARAMS.get("lfp_spatial_factor", 4))
-        HIGHPASS_FILTER_FREQ_MIN = float(PARAMS.get("lfp_highpass_freq_min", 0.1))
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = PARAMS.get("surface_channel_agar_probes_indices", None)
+        try:
+            # try to parse the JSON string first to avoid file name too long error
+            nwb_ecephys_params = json.loads(PARAMS)
+        except json.JSONDecodeError:
+            if Path(PARAMS).is_file():
+                with open(PARAMS, "r") as f:
+                    nwb_ecephys_params = json.load(f)
+            else:
+                raise ValueError(f"Invalid parameters: {PARAMS} is not a valid JSON string or file path")
+        STUB_TEST = nwb_ecephys_params.get("stub", False)
+        STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
+        WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
+        WRITE_RAW = nwb_ecephys_params.get("write_raw", False)
+        TEMPORAL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_temporal_factor", 2))
+        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_spatial_factor", 4))
+        HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
+        SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
     else:
         stub = args.stub or args.static_stub
         if args.stub:
