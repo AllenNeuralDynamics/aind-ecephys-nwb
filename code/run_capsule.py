@@ -113,41 +113,56 @@ lfp_surface_channel_agar_group.add_argument(
     "static_surface_channel_agar_probes_indices", help=lfp_surface_channel_help, nargs="?", type=str
 )
 
+parser.add_argument("--params", default=None, help="Path to the parameters file or JSON string. If given, it will override all other arguments.")
+
+
 if __name__ == "__main__":
     t_export_start = time.perf_counter()
 
     args = parser.parse_args()
 
-    stub = args.stub or args.static_stub
-    if args.stub:
-        STUB_TEST = True
-    else:
-        STUB_TEST = True if args.static_stub == "true" else False
-    STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub)
+    PARAMS = args.params
 
-    if args.skip_lfp:
-        WRITE_LFP = False
+    if PARAMS is not None:
+        STUB_TEST = PARAMS.get("stub", False)
+        STUB_SECONDS = float(PARAMS.get("stub_seconds", 10))
+        WRITE_LFP = PARAMS.get("write_lfp", True)
+        WRITE_RAW = PARAMS.get("write_raw", False)
+        TEMPORAL_SUBSAMPLING_FACTOR = int(PARAMS.get("lfp_temporal_factor", 2))
+        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(PARAMS.get("lfp_spatial_factor", 4))
+        HIGHPASS_FILTER_FREQ_MIN = float(PARAMS.get("lfp_highpass_freq_min", 0.1))
+        SURFACE_CHANNEL_AGAR_PROBES_INDICES = PARAMS.get("surface_channel_agar_probes_indices", None)
     else:
-        WRITE_LFP = True if args.static_write_lfp == "true" else False
+        stub = args.stub or args.static_stub
+        if args.stub:
+            STUB_TEST = True
+        else:
+            STUB_TEST = True if args.static_stub == "true" else False
+        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub)
 
-    if args.write_raw:
-        WRITE_RAW = True
-    else:
-        WRITE_RAW = True if args.static_write_raw == "true" else False
+        if args.skip_lfp:
+            WRITE_LFP = False
+        else:
+            WRITE_LFP = True if args.static_write_lfp == "true" else False
 
-    TEMPORAL_SUBSAMPLING_FACTOR = args.static_lfp_temporal_factor or args.lfp_temporal_factor
-    TEMPORAL_SUBSAMPLING_FACTOR = int(TEMPORAL_SUBSAMPLING_FACTOR)
-    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = args.static_lfp_spatial_factor or args.lfp_spatial_factor
-    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
-    HIGHPASS_FILTER_FREQ_MIN = args.static_lfp_highpass_freq_min or args.lfp_highpass_freq_min
-    HIGHPASS_FILTER_FREQ_MIN = float(HIGHPASS_FILTER_FREQ_MIN)
-    SURFACE_CHANNEL_AGAR_PROBES_INDICES = (
-        args.static_surface_channel_agar_probes_indices or args.surface_channel_agar_probes_indices
-    )
-    if SURFACE_CHANNEL_AGAR_PROBES_INDICES != "":
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
-    else:
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
+        if args.write_raw:
+            WRITE_RAW = True
+        else:
+            WRITE_RAW = True if args.static_write_raw == "true" else False
+
+        TEMPORAL_SUBSAMPLING_FACTOR = args.static_lfp_temporal_factor or args.lfp_temporal_factor
+        TEMPORAL_SUBSAMPLING_FACTOR = int(TEMPORAL_SUBSAMPLING_FACTOR)
+        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = args.static_lfp_spatial_factor or args.lfp_spatial_factor
+        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
+        HIGHPASS_FILTER_FREQ_MIN = args.static_lfp_highpass_freq_min or args.lfp_highpass_freq_min
+        HIGHPASS_FILTER_FREQ_MIN = float(HIGHPASS_FILTER_FREQ_MIN)
+        SURFACE_CHANNEL_AGAR_PROBES_INDICES = (
+            args.static_surface_channel_agar_probes_indices or args.surface_channel_agar_probes_indices
+        )
+        if SURFACE_CHANNEL_AGAR_PROBES_INDICES != "":
+            SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
+        else:
+            SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
 
     # find raw data
     ecephys_folders = [
