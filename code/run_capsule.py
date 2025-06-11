@@ -55,11 +55,6 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-n_jobs = os.cpu_count()
-job_kwargs = dict(n_jobs=n_jobs, progress_bar=False)
-si.set_global_job_kwargs(**job_kwargs)
-
-
 parser = argparse.ArgumentParser(description="Export Neuropixels data to NWB")
 # positional arguments
 stub_group = parser.add_mutually_exclusive_group()
@@ -148,6 +143,12 @@ if __name__ == "__main__":
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
     else:
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
+
+    # Use CO_CPUS/SLURM_JOB_CPUS_PER_NODE env variable if available
+    N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("SLURM_JOB_CPUS_PER_NODE")
+    N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
+    job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False)
+    si.set_global_job_kwargs(**job_kwargs)
 
     # find raw data
     ecephys_folders = [
