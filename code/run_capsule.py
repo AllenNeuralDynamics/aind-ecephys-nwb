@@ -679,7 +679,7 @@ if __name__ == "__main__":
                         if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
                             logging.info(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
                             channel_ids_to_keep = channel_ids[0 : len(channel_ids) : SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
-                            recording_lfp = recording_lfp.channel_slice(channel_ids_to_keep)
+                            recording_lfp = recording_lfp.select_channels(channel_ids_to_keep)
 
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
