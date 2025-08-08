@@ -246,7 +246,7 @@ if __name__ == "__main__":
         else:
             NWB_BACKEND = "hdf5"
 
-    logging.info(f"NWB backend: {NWB_BACKEND}")ù
+    logging.info(f"NWB backend: {NWB_BACKEND}")
     if NWB_BACKEND == "zarr":
         io_class = NWBZarrIO
     else:
@@ -322,6 +322,7 @@ if __name__ == "__main__":
         for block_index, block_str in enumerate(block_ids):
             for segment_index, recording_str in enumerate(recording_ids):
                 # add recording/experiment id if needed
+                nwbfile = None
                 if nwbfile_input_path is not None:
                     nwb_original_file_name = nwbfile_input_path.stem
                     if block_str in nwb_original_file_name and recording_str in nwb_original_file_name:
@@ -334,12 +335,18 @@ if __name__ == "__main__":
                 else:
                     # if no input file, create a new one
                     nwb_file_name = f"{session_name}_{block_str}_{recording_str}"
+
+                        
                     if input_folder is not None:
-                        from aind_nwb_utils import create_base_nwb_file
-                        nwbfile = create_base_nwb_file(input_folder)
-                    else:
+                        try:
+                            from aind_nwb_utils.utils import create_base_nwb_file
+                            nwbfile = create_base_nwb_file(Path(input_folder))
+                        except:
+                            logging.info(f"Failed to create base NWB file from metadata.")
+
+                    if nwbfile is None:
                         from pynwb.testing.mock.file import mock_Subject
-                        logging.info(f"\tCreating mock info.")
+                        logging.info(f"Creating NWB file with info.")
                         
                         subject = mock_Subject()
                         timezone_info = datetime.now(dt.timezone.utc).astimezone().tzinfo
@@ -701,26 +708,21 @@ if __name__ == "__main__":
                 logging.info(f"Writing NWB file to {nwbfile_output_path}")
                 if NWB_BACKEND == "zarr":
                     write_args = {"link_data": False}
-                    # TODO: enable parallel write for Zarr
-                    # write_args = {"number_of_jobs": n_jobs}
                 else:
                     write_args = {}
 
                 t_write_start = time.perf_counter()
                 if nwbfile_input_path is not None:
-                    logging.info(f"Exporting from input NWB file: {nwbfile_input_path}")
-
                     # if we have an input file, we read it and write it to the output file
                     with io_class(str(nwbfile_input_path), "r") as read_io:
                         export_io = io_class(str(nwbfile_output_path), "w")
                         export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
                 else:
-                    logging.info(f"Writing to new NWB file: {nwbfile_output_path}")
                     # if no input file, we create a new one
                     nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
                     # write the nwb file
                     with io_class(str(nwbfile_output_path), "w") as write_io:
-                        write_io.write(nwbfile=nwbfile, write_args=write_args)
+                        write_io.write(nwbfile)
                 t_write_end = time.perf_counter()
                 elapsed_time_write = np.round(t_write_end - t_write_start, 2)
                 logging.info(f"Writing time: {elapsed_time_write}s")
