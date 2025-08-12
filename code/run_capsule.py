@@ -323,15 +323,16 @@ if __name__ == "__main__":
             for segment_index, recording_str in enumerate(recording_ids):
                 # add recording/experiment id if needed
                 nwbfile = None
+                read_io = None
                 if nwbfile_input_path is not None:
                     nwb_original_file_name = nwbfile_input_path.stem
                     if block_str in nwb_original_file_name and recording_str in nwb_original_file_name:
                         nwb_file_name = nwb_original_file_name
                     else:
                         nwb_file_name = f"{nwb_original_file_name}_{block_str}_{recording_str}"
-                    io = io_class(str(nwbfile_input_path), "r")
+                    read_io = io_class(str(nwbfile_input_path), "r")
                     logging.info(f"Using existing NWB file: {nwb_file_name}")
-                    nwbfile = io.read()
+                    nwbfile = read_io.read()
                 else:
                     # if no input file, create a new one
                     nwb_file_name = f"{session_name}_{block_str}_{recording_str}"
@@ -714,9 +715,9 @@ if __name__ == "__main__":
                 t_write_start = time.perf_counter()
                 if nwbfile_input_path is not None:
                     # if we have an input file, we read it and write it to the output file
-                    with io_class(str(nwbfile_input_path), "r") as read_io:
-                        export_io = io_class(str(nwbfile_output_path), "w")
-                        export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
+                    export_io = io_class(str(nwbfile_output_path), "w")
+                    export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
+                    read_io.close()
                 else:
                     # if no input file, we create a new one
                     nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
