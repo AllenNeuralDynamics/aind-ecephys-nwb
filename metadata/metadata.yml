@@ -1,5 +1,5 @@
 metadata_version: 1
-name: NWB Packaging Ecephys (dev)
+name: NWB Packaging Ecephys
 description: Export ecephys data and metadata to NWB.
 tags:
 - NWB
