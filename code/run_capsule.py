@@ -439,11 +439,16 @@ if __name__ == "__main__":
                         recording.annotate(
                             probes_info=recordings[0].get_annotation("probes_info")
                         )
+                        # remove aggregation key property, since it causes typing issue in NWB export
+                        if "aggregation_key" in recording.get_property_keys():
+                            recording.delete_property("aggregation_key")
                         if len(recordings_lfp) > 0:
                             recording_lfp = si.aggregate_channels(recordings_lfp)
                             recording_lfp.annotate(
                                 probes_info=recordings_lfp[0].get_annotation("probes_info")
                             )
+                            if "aggregation_key" in recording_lfp.get_property_keys():
+                                recording_lfp.delete_property("aggregation_key")
 
                     if STUB_TEST:
                         end_frame = int(STUB_SECONDS * recording.sampling_frequency)
