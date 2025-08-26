@@ -381,9 +381,6 @@ if __name__ == "__main__":
                         ecephys_session_folder, segment_index=segment_index
                     )
 
-                # write 1 new nwb file per segment
-                # with io_class(str(nwbfile_input_path), "r") as read_io:
-                #     nwbfile = read_io.read()
 
                 probe_device_names = []
                 for stream_index, stream_name in enumerate(streams_to_process):
