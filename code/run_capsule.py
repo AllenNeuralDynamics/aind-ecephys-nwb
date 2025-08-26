@@ -8,6 +8,9 @@ import os
 import json
 import time
 import logging
+import datetime as dt
+from datetime import datetime
+from uuid import uuid4
 
 import spikeinterface as si
 import spikeinterface.extractors as se
@@ -25,7 +28,7 @@ from neuroconv.tools.spikeinterface import (
     add_electrodes_to_nwbfile,
 )
 
-from pynwb import NWBHDF5IO
+from pynwb import NWBHDF5IO, NWBFile
 from pynwb.file import Device
 from hdmf_zarr import NWBZarrIO
 
@@ -57,6 +60,14 @@ results_folder = Path("../results/")
 
 parser = argparse.ArgumentParser(description="Export Neuropixels data to NWB")
 # positional arguments
+backend_group = parser.add_mutually_exclusive_group()
+backend_help = "NWB backend. It can be either 'hdf5' or 'zarr'."
+backend_group.add_argument(
+    "--backend", choices=["hdf5", "zarr"], default="zarr", help=backend_help
+)
+backend_group.add_argument("static_backend", nargs="?", help=backend_help)
+
+
 stub_group = parser.add_mutually_exclusive_group()
 stub_help = "Write a stub version for testing"
 stub_group.add_argument("--stub", action="store_true", help=stub_help)
@@ -128,6 +139,7 @@ if __name__ == "__main__":
                     nwb_ecephys_params = json.load(f)
             else:
                 raise ValueError(f"Invalid parameters: {PARAMS} is not a valid JSON string or file path")
+        NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
         STUB_TEST = nwb_ecephys_params.get("stub", False)
         STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
         WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
@@ -137,6 +149,7 @@ if __name__ == "__main__":
         HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
     else:
+        NWB_BACKEND = args.static_backend or args.backend
         stub = args.stub or args.static_stub
         if args.stub:
             STUB_TEST = True
@@ -171,21 +184,21 @@ if __name__ == "__main__":
     # Use CO_CPUS/SLURM_CPUS_ON_NODE env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("SLURM_CPUS_ON_NODE")
     N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
-    job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False)
+    job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False, mp_context="spawn")
     si.set_global_job_kwargs(**job_kwargs)
 
-    # find raw data
-    ecephys_folders = [
-        p
-        for p in data_folder.iterdir()
-        if p.is_dir()
-        and ("ecephys" in p.name or "behavior" in p.name)
-        and ("sorted" not in p.name and "nwb" not in p.name)
-    ]
-    assert len(ecephys_folders) == 1, "Attach one ecephys folder at a time"
-    ecephys_session_folder = ecephys_folders[0]
-    session_name = ecephys_session_folder.name
     if HAVE_AIND_LOG_UTILS:
+        # find raw data
+        ecephys_folders = [
+            p
+            for p in data_folder.iterdir()
+            if p.is_dir()
+            and ("ecephys" in p.name or "behavior" in p.name)
+            and ("sorted" not in p.name and "nwb" not in p.name)
+            and "ecephys_clipped" not in p.name
+        ]
+        ecephys_session_folder = ecephys_folders[0]
+        session_name = ecephys_session_folder.name
         # look for subject.json and data_description.json files
         subject_json = ecephys_session_folder / "subject.json"
         subject_id = "undefined"
@@ -221,17 +234,23 @@ if __name__ == "__main__":
 
     # find base NWB file
     nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
-    assert len(nwb_files) == 1, "Attach one base NWB file data at a time"
-    nwbfile_input_path = nwb_files[0]
+    nwbfile_input_path = None
+    if len(nwb_files) == 1:
+        nwbfile_input_path = nwb_files[0]
 
-    if nwbfile_input_path.is_dir():
-        assert (nwbfile_input_path / ".zattrs").is_file(), f"{nwbfile_input_path.name} is not a valid Zarr folder"
-        NWB_BACKEND = "zarr"
+    if nwbfile_input_path is not None:
+        logging.info(f"Found NWB file: {nwbfile_input_path}. Setting up NWB backend based on input file type.")
+        if nwbfile_input_path.is_dir():
+            assert (nwbfile_input_path / ".zattrs").is_file(), f"{nwbfile_input_path.name} is not a valid Zarr folder"
+            NWB_BACKEND = "zarr"
+        else:
+            NWB_BACKEND = "hdf5"
+
+    logging.info(f"NWB backend: {NWB_BACKEND}")
+    if NWB_BACKEND == "zarr":
         io_class = NWBZarrIO
     else:
-        NWB_BACKEND = "hdf5"
         io_class = NWBHDF5IO
-    logging.info(f"NWB backend: {NWB_BACKEND}")
 
     logging.info(f"\nExporting session: {session_name}")
 
@@ -243,42 +262,19 @@ if __name__ == "__main__":
         job_dicts.append(job_dict)
     logging.info(f"Found {len(job_dicts)} JSON job files")
 
-    if len(job_dicts) == 0:
-        logging.info("Standalone mode!")
-        # AIND-specific section to parse AIND files
-        if (ecephys_session_folder / "ecephys_clipped").is_dir():
-            oe_folder = ecephys_session_folder / "ecephys_clipped"
-            compressed_folder = ecephys_session_folder / "ecephys_compressed"
-        else:
-            assert (ecephys_session_folder / "ecephys").is_dir()
-            if (ecephys_session_folder / "ecephys" / "ecephys_compressed").is_dir():
-                oe_folder = ecephys_session_folder / "ecephys" / "ecephys_clipped"
-                compressed_folder = ecephys_session_folder / "ecephys" / "ecephys_compressed"
-            else:
-                oe_folder = ecephys_session_folder / "ecephys"
-                compressed_folder = None
+    # check for timestamps to overwrite recording timestamps
+    timestamps_folder = data_folder / "timestamps"
 
-        # Read Open Ephys Folder structure with NEO
-        neo_io = OpenEphysBinaryRawIO(oe_folder)
-        neo_io.parse_header()
-        num_blocks = neo_io.block_count()
-        logging.info(f"Number of experiments: {num_blocks}")
-        stream_names = neo_io.header["signal_streams"]["name"]
-        record_nodes = list(neo_io.folder_structure.keys())
-        experiment_ids = [eid for eid in neo_io.folder_structure[record_nodes[0]]["experiments"].keys()]
-        experiment_names = [e["name"] for eid, e in neo_io.folder_structure[record_nodes[0]]["experiments"].items()]
-        recording_names = [
-            r["name"]
-            for rid, r in neo_io.folder_structure[record_nodes[0]]["experiments"][experiment_ids[0]][
-                "recordings"
-            ].items()
-        ]
-        # in this case we don't need to split by group, since
-        block_ids = experiment_names
-        recording_ids = recording_names
-    else:
-        # we create a result NWB file for each experiment/recording
-        recording_names = [job_dict["recording_name"] for job_dict in job_dicts]
+    # we create a result NWB file for each experiment/recording
+    session_names = np.unique([job_dict["session_name"] for job_dict in job_dicts])
+
+    for session_name in session_names:
+        logging.info(f"Session: {session_name}")
+        # filter job_dicts for this session
+        job_dicts = [jd for jd in job_dicts if jd["session_name"] == session_name]
+        input_folder = job_dicts[0].get("input_folder")
+
+        recording_names = [job_dict["recording_name"] for job_dict in job_dicts]        
 
         # find blocks and recordings
         block_ids = []
@@ -301,51 +297,90 @@ if __name__ == "__main__":
             if stream_name not in stream_names:
                 stream_names.append(stream_name)
         # note: in case of groups, we will need to aggregate the data for each stream into a single recording
+        streams_to_process = []
+        for stream_name in stream_names:
+            # Skip NI-DAQ
+            if "NI-DAQ" in stream_name:
+                continue
+            # LFP are handled later
+            if "LFP" in stream_name:
+                continue
+            streams_to_process.append(stream_name)
 
-    streams_to_process = []
-    for stream_name in stream_names:
-        # Skip NI-DAQ
-        if "NI-DAQ" in stream_name:
-            continue
-        # LFP are handled later
-        if "LFP" in stream_name:
-            continue
-        streams_to_process.append(stream_name)
+        block_ids = sorted(block_ids)
+        recording_ids = sorted(recording_ids)
+        streams_to_process = sorted(streams_to_process)
 
-    block_ids = sorted(block_ids)
-    recording_ids = sorted(recording_ids)
-    streams_to_process = sorted(streams_to_process)
+        logging.info(f"Number of NWB files to write: {len(block_ids) * len(recording_ids)}")
 
-    logging.info(f"Number of NWB files to write: {len(block_ids) * len(recording_ids)}")
+        logging.info(f"Number of streams to write for each file: {len(streams_to_process)}")
 
-    logging.info(f"Number of streams to write for each file: {len(streams_to_process)}")
+        # Construct 1 nwb file per experiment - streams are concatenated!
+        nwb_output_files = []
+        electrical_series_to_configure = []
+        nwb_output_files = []
+        for block_index, block_str in enumerate(block_ids):
+            for segment_index, recording_str in enumerate(recording_ids):
+                # add recording/experiment id if needed
+                nwbfile = None
+                read_io = None
+                if nwbfile_input_path is not None:
+                    nwb_original_file_name = nwbfile_input_path.stem
+                    if block_str in nwb_original_file_name and recording_str in nwb_original_file_name:
+                        nwb_file_name = nwb_original_file_name
+                    else:
+                        nwb_file_name = f"{nwb_original_file_name}_{block_str}_{recording_str}"
+                    read_io = io_class(str(nwbfile_input_path), "r")
+                    logging.info(f"Using existing NWB file: {nwb_file_name}")
+                    nwbfile = read_io.read()
+                else:
+                    # if no input file, create a new one
+                    nwb_file_name = f"{session_name}_{block_str}_{recording_str}"
 
-    # Construct 1 nwb file per experiment - streams are concatenated!
-    nwb_output_files = []
-    electrical_series_to_configure = []
-    nwb_output_files = []
-    for block_index, block_str in enumerate(block_ids):
-        for segment_index, recording_str in enumerate(recording_ids):
-            # add recording/experiment id if needed
-            nwb_original_file_name = nwbfile_input_path.stem
-            if block_str in nwb_original_file_name and recording_str in nwb_original_file_name:
-                nwb_file_name = nwb_original_file_name
-            else:
-                nwb_file_name = f"{nwb_original_file_name}_{block_str}_{recording_str}"
+                        
+                    if input_folder is not None:
+                        try:
+                            from aind_nwb_utils.utils import create_base_nwb_file
+                            nwbfile = create_base_nwb_file(Path(input_folder))
+                        except:
+                            logging.info(f"Failed to create base NWB file from metadata.")
 
-            if STUB_TEST:
-                nwb_file_name = f"{nwb_file_name}_stub"
+                    if nwbfile is None:
+                        from pynwb.testing.mock.file import mock_Subject
+                        logging.info(f"Creating NWB file with info.")
+                        
+                        subject = mock_Subject()
+                        timezone_info = datetime.now(dt.timezone.utc).astimezone().tzinfo
+                        session_start_date_time = datetime.now().replace(
+                            tzinfo=timezone_info
+                        )
+                        institution = None
+                        session_id = session_name
+                        asset_name = session_id
 
-            nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
+                        # Store and write NWB file
+                        nwbfile = NWBFile(
+                            session_description="NWB file generated by AIND pipeline",
+                            identifier=str(uuid4()),
+                            session_start_time=session_start_date_time,
+                            institution=institution,
+                            subject=subject,
+                            session_id=session_id,
+                        )
 
-            # Find probe devices (this will only work for AIND)
-            devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                ecephys_session_folder, segment_index=segment_index
-            )
+                # add suffix for stub test
+                if STUB_TEST:
+                    nwb_file_name = f"{nwb_file_name}_stub"
 
-            # write 1 new nwb file per segment
-            with io_class(str(nwbfile_input_path), "r") as read_io:
-                nwbfile = read_io.read()
+                nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
+
+                # Find probe devices (this will only work for AIND)
+                devices_from_rig, target_locations = None, None
+                if input_folder is not None:
+                    devices_from_rig, target_locations = get_devices_from_rig_metadata(
+                        ecephys_session_folder, segment_index=segment_index
+                    )
+
 
                 probe_device_names = []
                 for stream_index, stream_name in enumerate(streams_to_process):
@@ -360,78 +395,55 @@ if __name__ == "__main__":
                             recording_job_dicts.append(job_dict)
 
                     recording_lfp = None
-                    if recording_job_dicts is not None:
-                        recordings = []
-                        recordings_lfp = []
-                        logging.info(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
-                        if len(recording_job_dicts) > 1:
-                            # in case of multiple groups, sort by group names
-                            sort_idxs = np.argsort([jd["recording_name"] for jd in recording_job_dicts])
-                            recording_job_dicts_sorted = np.array(recording_job_dicts)[sort_idxs]
-                        else:
-                            recording_job_dicts_sorted = recording_job_dicts
-                        for recording_job_dict in recording_job_dicts_sorted:
-                            recording = si.load(recording_job_dict["recording_dict"], base_folder=data_folder)
-                            skip_times = recording_job_dict.get("skip_times", False)
-                            if skip_times:
-                                recording.reset_times()
-                            recordings.append(recording)
-                            logging.info(f"\t\t{recording_job_dict['recording_name']}")
-                            if "recording_lfp_dict" in recording_job_dict:
-                                logging.info(f"\tLoading associated LFP recording")
-                                recording_lfp = si.load(recording_job_dict["recording_lfp_dict"], base_folder=data_folder)
-                                if skip_times:
-                                    recording_lfp.reset_times()
-                                recordings_lfp.append(recording_lfp)
-                                logging.info(f"\t\t{recording_lfp}")
-
-                        # for multiple groups, aggregate channels
-                        if len(recording_job_dicts_sorted) > 1:
-                            logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
-                            recording = si.aggregate_channels(recordings)
-                            # probes_info get lost in aggregation, so we need to manually set them
-                            recording.annotate(
-                                probes_info=recordings[0].get_annotation("probes_info")
-                            )
-                            if len(recordings_lfp) > 0:
-                                recording_lfp = si.aggregate_channels(recordings_lfp)
-                                recording_lfp.annotate(
-                                    probes_info=recordings_lfp[0].get_annotation("probes_info")
-                                )
-
+                    recordings = []
+                    recordings_lfp = []
+                    logging.info(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
+                    if len(recording_job_dicts) > 1:
+                        # in case of multiple groups, sort by group names
+                        sort_idxs = np.argsort([jd["recording_name"] for jd in recording_job_dicts])
+                        recording_job_dicts_sorted = np.array(recording_job_dicts)[sort_idxs]
                     else:
-                        logging.info("\tCould not find JSON file")
-                        # Add Recordings
-                        recording_multi_segment_lfp = None
-                        if compressed_folder is not None:
-                            stream_name_zarr = f"{block_str}_{stream_name}"
-                            recording_multi_segment = si.read_zarr(compressed_folder / f"{stream_name_zarr}.zarr")
-                            try:
-                                stream_name_zarr_lfp = stream_name_zarr.replace("AP", "LFP")
-                                recording_multi_segment_lfp = si.read_zarr(
-                                    compressed_folder / f"{stream_name_zarr_lfp}.zarr"
-                                )
-                            except:
-                                pass
-                        else:
-                            recording_multi_segment = se.read_openephys(
-                                oe_folder, stream_name=stream_name, block_index=block_index
-                            )
-                            try:
-                                recording_multi_segment_lfp = se.read_openephys(
-                                    oe_folder, stream_name=stream_name.replace("AP", "LFP"), block_index=block_index
-                                )
-                            except:
-                                pass
-                        logging.info(f"\tLoading recording from AIND raw data")
-                        recording = si.split_recording(recording_multi_segment)[segment_index]
-                        logging.info(f"\t\t{recording}")
-                        if recording_multi_segment_lfp is not None:
+                        recording_job_dicts_sorted = recording_job_dicts
+                    for recording_job_dict in recording_job_dicts_sorted:
+                        recording = si.load(recording_job_dict["recording_dict"], base_folder=data_folder)
+                        recording_name = recording_job_dict["recording_name"]
+                        skip_times = recording_job_dict.get("skip_times", False)
+                        if skip_times:
+                            recording.reset_times()
+                        timestamps_file = timestamps_folder / f"{recording_name}.npy"
+                        if timestamps_file.is_file():
+                            logging.info(f"\tSetting synced timestamps from {timestamps_file}")
+                            timestamps = np.load(timestamps_file)
+                            recording.set_times(timestamps)
+                        recordings.append(recording)
+
+                        logging.info(f"\t\t{recording_job_dict['recording_name']}")
+                        if "recording_lfp_dict" in recording_job_dict:
                             logging.info(f"\tLoading associated LFP recording")
-                            recording_lfp = si.split_recording(recording_multi_segment_lfp)[segment_index]
+                            recording_lfp = si.load(recording_job_dict["recording_lfp_dict"], base_folder=data_folder)
+                            if skip_times:
+                                recording_lfp.reset_times()
+                            timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
+                            if timestamps_file_lfp.is_file():
+                                logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
+                                timestamps_lfp = np.load(timestamps_file_lfp)
+                                recording_lfp.set_times(timestamps_lfp)
+                            recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
-                        else:
-                            recording_lfp = None
+
+                    # for multiple groups, aggregate channels
+                    if len(recording_job_dicts_sorted) > 1:
+                        logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
+                        recording = si.aggregate_channels(recordings)
+                        # probes_info get lost in aggregation, so we need to manually set them
+                        recording.annotate(
+                            probes_info=recordings[0].get_annotation("probes_info")
+                        )
+                        if len(recordings_lfp) > 0:
+                            recording_lfp = si.aggregate_channels(recordings_lfp)
+                            recording_lfp.annotate(
+                                probes_info=recordings_lfp[0].get_annotation("probes_info")
+                            )
 
                     if STUB_TEST:
                         end_frame = int(STUB_SECONDS * recording.sampling_frequency)
@@ -458,55 +470,40 @@ if __name__ == "__main__":
                                 break
                     probe_info = None
                     if probe_device_name is None:
-                        if recording_job_dict is not None:
-                            electrode_group_location = "unknown"
-                            probes_info = recording.get_annotation("probes_info", None)
-                            if probes_info is not None and len(probes_info) == 1:
-                                probe_info = probes_info[0]
-                        else:
-                            electrode_group_location = "unknown"
-                            record_node, oe_stream_name = stream_name.split("#")
-                            recording_folder_name = f"{block_str}_{stream_name}_{recording_name}"
-                            settings_file = neo_io.folder_structure[record_node]["experiments"][
-                                experiment_ids[block_index]
-                            ]["settings_file"]
-                            probe = pi.read_openephys(settings_file, stream_name=oe_stream_name)
-                            probe_info = dict(
-                                name=probe.name,
-                                manuefacturer=probe.manufacturer,
-                                model_name=probe.model_name,
-                                serial_number=probe.serial_number,
-                            )
+                        electrode_group_location = "unknown"
+                        probes_info = recording.get_annotation("probes_info", None)
+                        if probes_info is not None and len(probes_info) == 1:
+                            probe_info = probes_info[0]
                     else:
                         # deal with Quad Base: the rig.json has the same name for the different shanks
                         # but we have to load the single-shank probe device name
-                        if recording_job_dict is not None:
-                            probes_info = recording.get_annotation("probes_info", None)
-                            if probes_info is not None and len(probes_info) == 1:
-                                probe_info = probes_info[0]
-                                model_name = probe_info.get("model_name")
-                                if model_name is not None and "Quad Base" in model_name:
-                                    logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
-                                    probe_device_name = probe_info["name"]
-                        
+                        probes_info = recording.get_annotation("probes_info", None)
+                        if probes_info is not None and len(probes_info) == 1:
+                            probe_info = probes_info[0]
+                            model_name = probe_info.get("model_name")
+                            if model_name is not None and "Quad Base" in model_name:
+                                logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
+                                probe_device_name = probe_info["name"]
 
                     if probe_info is not None:
                         probe_device_name = probe_info.get("name", None)
                         probe_device_manufacturer = probe_info.get("manufacturer", None)
                         probe_model_name = probe_info.get("model_name", None)
                         probe_serial_number = probe_info.get("serial_number", None)
+                        probe_description = probe_info.get("description", None)
                         probe_device_description = ""
-                        if probe_device_name is None:
-                            if probe_model_name is not None:
-                                probe_device_name = probe_model_name
-                            else:
-                                probe_device_name = "Probe"
+                        probe_device_name = probe_device_name or probe_model_name or "Probe"
+
                         if probe_model_name is not None:
                             probe_device_description += f"Model: {probe_device_description}"
                         if probe_serial_number is not None:
                             if len(probe_device_description) > 0:
                                 probe_device_description += " - "
                             probe_device_description += f"Serial number: {probe_serial_number}"
+                        if probe_description is not None:
+                            if len(probe_device_description) > 0:
+                                probe_device_description += " - "
+                            probe_device_description += f"Description: {probe_description}"
                         # this is needed to account for a case where multiple streams have the same device name
                         if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
                             probe_device_name = f"{probe_device_name}-{stream_index}"
@@ -663,7 +660,7 @@ if __name__ == "__main__":
                         if SPATIAL_CHANNEL_SUBSAMPLING_FACTOR > 1:
                             logging.info(f"\t\tSpatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
                             channel_ids_to_keep = channel_ids[0 : len(channel_ids) : SPATIAL_CHANNEL_SUBSAMPLING_FACTOR]
-                            recording_lfp = recording_lfp.channel_slice(channel_ids_to_keep)
+                            recording_lfp = recording_lfp.select_channels(channel_ids_to_keep)
 
                         # time subsampling/decimate
                         if TEMPORAL_SUBSAMPLING_FACTOR > 1:
@@ -709,14 +706,21 @@ if __name__ == "__main__":
                 logging.info(f"Writing NWB file to {nwbfile_output_path}")
                 if NWB_BACKEND == "zarr":
                     write_args = {"link_data": False}
-                    # TODO: enable parallel write for Zarr
-                    # write_args = {"number_of_jobs": n_jobs}
                 else:
                     write_args = {}
 
                 t_write_start = time.perf_counter()
-                with io_class(str(nwbfile_output_path), "w") as export_io:
+                if nwbfile_input_path is not None:
+                    # if we have an input file, we read it and write it to the output file
+                    export_io = io_class(str(nwbfile_output_path), "w")
                     export_io.export(src_io=read_io, nwbfile=nwbfile, write_args=write_args)
+                    read_io.close()
+                else:
+                    # if no input file, we create a new one
+                    nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
+                    # write the nwb file
+                    with io_class(str(nwbfile_output_path), "w") as write_io:
+                        write_io.write(nwbfile)
                 t_write_end = time.perf_counter()
                 elapsed_time_write = np.round(t_write_end - t_write_start, 2)
                 logging.info(f"Writing time: {elapsed_time_write}s")

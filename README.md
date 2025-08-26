@@ -1,5 +1,5 @@
-# Export subject to NWB
-## NWB_Packaging_Subject_Capsule
+# Export ecephys to NWB
+## NWB Packaging Ecephys
 
 
 ### Description
