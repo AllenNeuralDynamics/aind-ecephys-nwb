@@ -376,7 +376,8 @@ if __name__ == "__main__":
                 devices_from_rig, target_locations = None, None
                 if input_folder is not None:
                     devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                        ecephys_session_folder, segment_index=segment_index
+                        input_folder,
+                        segment_index=segment_index
                     )
 
 
