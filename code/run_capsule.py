@@ -58,7 +58,7 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-parser = argparse.ArgumentParser(description="Export Neuropixels data to NWB")
+parser = argparse.ArgumentParser(description="Export Ecephys data to NWB")
 # positional arguments
 backend_group = parser.add_mutually_exclusive_group()
 backend_help = "NWB backend. It can be either 'hdf5' or 'zarr'."
@@ -76,7 +76,7 @@ stub_group.add_argument("static_stub", nargs="?", default="false", help=stub_hel
 stub_seconds_group = parser.add_mutually_exclusive_group()
 stub_seconds_help = "Duration of stub recording"
 stub_seconds_group.add_argument("--stub-seconds", default=10, help=stub_seconds_help)
-stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_help)
+stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_seconds_help)
 
 write_lfp_group = parser.add_mutually_exclusive_group()
 write_lfp_help = "Whether to write LFP electrical series"
@@ -155,7 +155,7 @@ if __name__ == "__main__":
             STUB_TEST = True
         else:
             STUB_TEST = True if args.static_stub == "true" else False
-        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub)
+        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub_secods)
 
         if args.skip_lfp:
             WRITE_LFP = False
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     else:
         io_class = NWBHDF5IO
 
-    job_json_files = [p for p in data_folder.iterdir() if p.suffix == ".json" and "job" in p.name]
+    job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
         with open(job_json_file) as f:
@@ -485,7 +485,13 @@ if __name__ == "__main__":
                         if probes_info is not None and len(probes_info) == 1:
                             probe_info = probes_info[0]
                             model_name = probe_info.get("model_name")
+                            model_description = probe_info.get("description")
+                            is_quad_base = False
                             if model_name is not None and "Quad Base" in model_name:
+                                is_quad_base = True
+                            elif model_description is not None and "Quad Base" in model_description:
+                                is_quad_base = True
+                            if is_quad_base:
                                 logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
                                 probe_device_name = probe_info["name"]
 
@@ -684,7 +690,7 @@ if __name__ == "__main__":
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False
+                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
