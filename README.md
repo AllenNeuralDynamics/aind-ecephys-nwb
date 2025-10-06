@@ -11,19 +11,19 @@ This capsule is designed to append device, electrodes, LFP and raw (optional) el
 
 The `data/` folder must include:
 
-- a base valid NWB file to append the ephys data to
-- the raw data
+- the raw data in any supported format (e.g. AIND ephys format, OpenEphys, SpikeGLX, etc.)
 - (optional) a list of json files produced by the [aind-ephys-job-dispatch](https://github.com/AllenNeuralDynamics/aind-ephys-job-dispatch/) process
 
-If no JSON files are provided, the capsule will assume the raw data is in the [AIND
-ephys format](https://github.com/AllenNeuralDynamics/aind-physio-arch/blob/main/doc/file_formats/ephys.md). When JSON files are provided, the capsule will use this information 
-to load the raw and LFP data.
+If the input data is already in NWB format, the capsule will simply start from the existing NWB file and append the ecephys data. If in another format, the capsule will look for the ``subject.json`` and 
+``data_description.json`` files in the `data/` folder to extract subject and session metadata. If these files are not found, the capsule will create mock subject and session metadata.
 
 ### Parameters
 
 The `code/run` script takes the following arguments:
 
 ```bash
+  --backend {pynwb,hdmf}
+                        Backend to use for NWB writing (if pipeline 'input' is not NWB)
   --stub                Write a stub version for testing
   --stub-seconds STUB_SECONDS
                         Duration of stub recording
