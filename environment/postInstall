@@ -3,6 +3,6 @@ set -e
 
 git clone https://github.com/AllenNeuralDynamics/aind-nwb-utils.git
 cd aind-nwb-utils
-git checkout 99f22528b891f350a5a74aee2726f0e4f0b13dcc
+git checkout 60c9c5239eb445ff707b5c8c4a0f32987bdec445
 pip install .
 cd ..

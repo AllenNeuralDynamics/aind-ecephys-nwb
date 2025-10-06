@@ -35,6 +35,8 @@ from hdmf_zarr import NWBZarrIO
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
 from numcodecs import Blosc
 
+from aind_nwb_utils.utils import get_ephys_devices_from_metadata
+
 # AIND
 try:
     from aind_log_utils import log
@@ -42,8 +44,6 @@ try:
     HAVE_AIND_LOG_UTILS = True
 except ImportError:
     HAVE_AIND_LOG_UTILS = False
-
-from aind_nwb_utils import get_devices_from_rig_metadata
 
 
 # filter and resample LFP
@@ -377,9 +377,8 @@ if __name__ == "__main__":
                 # Find probe devices (this will only work for AIND)
                 devices_from_rig, target_locations = None, None
                 if input_folder is not None:
-                    devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                        input_folder,
-                        segment_index=segment_index
+                    devices_from_rig, target_locations = get_ephys_devices_from_metadata(
+                        input_folder
                     )
 
 
