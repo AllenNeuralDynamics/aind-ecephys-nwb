@@ -43,7 +43,7 @@ try:
 except ImportError:
     HAVE_AIND_LOG_UTILS = False
 
-from utils import get_devices_from_rig_metadata
+from aind_nwb_utils import get_devices_from_rig_metadata
 
 
 # filter and resample LFP
@@ -254,7 +254,7 @@ if __name__ == "__main__":
 
     logging.info(f"\nExporting session: {session_name}")
 
-    job_json_files = [p for p in data_folder.iterdir() if p.suffix == ".json" and "job" in p.name]
+    job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
         with open(job_json_file) as f:
