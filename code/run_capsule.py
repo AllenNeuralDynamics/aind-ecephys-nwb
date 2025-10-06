@@ -43,7 +43,7 @@ try:
 except ImportError:
     HAVE_AIND_LOG_UTILS = False
 
-from utils import get_devices_from_rig_metadata
+from aind_nwb_utils import get_devices_from_rig_metadata
 
 
 # filter and resample LFP
@@ -252,6 +252,8 @@ if __name__ == "__main__":
     else:
         io_class = NWBHDF5IO
 
+    logging.info(f"\nExporting session: {session_name}")
+
     job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
@@ -438,22 +440,16 @@ if __name__ == "__main__":
                         recording.annotate(
                             probes_info=recordings[0].get_annotation("probes_info")
                         )
-<<<<<<< HEAD
-=======
                         # remove aggregation key property, since it causes typing issue in NWB export
                         if "aggregation_key" in recording.get_property_keys():
                             recording.delete_property("aggregation_key")
->>>>>>> 2f838b2efa6bd01afe7848944b681c6586e4a2fe
                         if len(recordings_lfp) > 0:
                             recording_lfp = si.aggregate_channels(recordings_lfp)
                             recording_lfp.annotate(
                                 probes_info=recordings_lfp[0].get_annotation("probes_info")
                             )
-<<<<<<< HEAD
-=======
                             if "aggregation_key" in recording_lfp.get_property_keys():
                                 recording_lfp.delete_property("aggregation_key")
->>>>>>> 2f838b2efa6bd01afe7848944b681c6586e4a2fe
 
                     if STUB_TEST:
                         end_frame = int(STUB_SECONDS * recording.sampling_frequency)
@@ -491,9 +487,6 @@ if __name__ == "__main__":
                         if probes_info is not None and len(probes_info) == 1:
                             probe_info = probes_info[0]
                             model_name = probe_info.get("model_name")
-<<<<<<< HEAD
-                            if model_name is not None and "Quad Base" in model_name:
-=======
                             model_description = probe_info.get("description")
                             is_quad_base = False
                             if model_name is not None and "Quad Base" in model_name:
@@ -501,7 +494,6 @@ if __name__ == "__main__":
                             elif model_description is not None and "Quad Base" in model_description:
                                 is_quad_base = True
                             if is_quad_base:
->>>>>>> 2f838b2efa6bd01afe7848944b681c6586e4a2fe
                                 logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
                                 probe_device_name = probe_info["name"]
 
