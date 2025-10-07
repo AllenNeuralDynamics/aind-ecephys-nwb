@@ -23,9 +23,10 @@ from neuroconv.tools.nwb_helpers import (
     configure_backend,
     get_default_backend_configuration,
 )
-from neuroconv.tools.spikeinterface import (
+from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
     add_electrodes_to_nwbfile,
+    add_electrodes_info_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -375,9 +376,9 @@ if __name__ == "__main__":
                 nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
 
                 # Find probe devices (this will only work for AIND)
-                devices_from_rig, target_locations = None, None
+                devices_from_metadata, target_locations = None, None
                 if input_folder is not None:
-                    devices_from_rig, target_locations = get_ephys_devices_from_metadata(
+                    devices_from_metadata, target_locations = get_ephys_devices_from_metadata(
                         input_folder
                     )
 
@@ -459,8 +460,8 @@ if __name__ == "__main__":
 
                     # Add device and electrode group
                     probe_device_name = None
-                    if devices_from_rig:
-                        for device_name, device in devices_from_rig.items():
+                    if devices_from_metadata:
+                        for device_name, device in devices_from_metadata.items():
                             # add the device, since it could be a laser
                             if device_name not in nwbfile.devices:
                                 nwbfile.add_device(device)
@@ -470,7 +471,7 @@ if __name__ == "__main__":
                                 probe_device_name = device_name
                                 electrode_group_location = target_locations.get(device_name, "unknown")
                                 logging.info(
-                                    f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
+                                    f"\tFound device from metadata: {probe_device_name} at location {electrode_group_location}"
                                 )
                                 break
                     probe_info = None
@@ -495,6 +496,8 @@ if __name__ == "__main__":
                             if is_quad_base:
                                 logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
                                 probe_device_name = probe_info["name"]
+                            else:
+                                probe_info = None
 
                     if probe_info is not None:
                         probe_device_name = probe_info.get("name", None)
@@ -529,6 +532,7 @@ if __name__ == "__main__":
                     # last resort: could not find a device
                     if probe_device_name is None:
                         logging.info("\tCould not load device information: using default Device")
+                        raise Exception
                         probe_device_name = "Device"
                         if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
                             probe_device_name = f"{probe_device_name}-{stream_index}"
@@ -556,7 +560,6 @@ if __name__ == "__main__":
                         ]
                     else:
                         recording.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
-                        channel_groups = np.unique(recording.get_channel_groups())
                         electrode_groups_metadata = [
                             dict(
                                 name=f"{probe_device_name}_group{g}",
@@ -564,7 +567,7 @@ if __name__ == "__main__":
                                 location=electrode_group_location,
                                 device=probe_device_name,
                             )
-                            for g in channel_groups
+                            for g in np.unique(channel_groups)
                         ]
                     electrode_metadata["Ecephys"]["ElectrodeGroup"] = electrode_groups_metadata
 
@@ -592,7 +595,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_electrodes_info_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"

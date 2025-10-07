@@ -1,0 +1,89 @@
+name: Dev Branch Testing
+on:
+  workflow_dispatch:
+    inputs:
+      python-versions:
+        description: 'List of Python versions to use in matrix, as JSON string'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      python-versions:
+        description: 'List of Python versions to use in matrix, as JSON string'
+        required: true
+        type: string
+    secrets:
+      DANDI_API_KEY:
+        required: true
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      S3_GIN_BUCKET:
+        required: true
+
+env:
+  DANDI_API_KEY: ${{ secrets.DANDI_API_KEY }}
+
+jobs:
+  run:
+    name: Ubuntu tests with Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJson(inputs.python-versions) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: git fetch --prune --unshallow --tags
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Global Setup
+        run: |
+          python -m pip install -U pip  # Official recommended way
+          git config --global user.email "CI@example.com"
+          git config --global user.name "CI Almighty"
+
+      - name: Install Wine (For Plexon2 Tests)
+        uses: ./.github/actions/install-wine
+        with:
+          os: ${{ runner.os }}
+
+      - name: Install full requirements
+        run: pip install --no-cache-dir .[full,test]
+
+      - name: Dev gallery - ROIExtractors
+        run: pip install --no-cache-dir git+https://github.com/CatalystNeuro/roiextractors@main
+      - name: Dev gallery - DANDI
+        run: pip install --no-cache-dir git+https://github.com/dandi/dandi-cli@master
+      - name: Dev gallery - PyNWB
+        run: pip install --no-cache-dir git+https://github.com/NeurodataWithoutBorders/pynwb@dev
+      - name: Dev gallery - ProbeInterface
+        run: pip install --no-cache-dir git+https://github.com/spikeinterface/probeinterface@main
+      - name: Dev gallery - SpikeInterface
+        run: pip install --no-cache-dir "spikeinterface[test_core] @ git+https://github.com/spikeinterface/spikeinterface@main"
+      - name: Dev gallery - NEO
+        run: pip install --no-cache-dir git+https://github.com/NeuralEnsemble/python-neo@master
+      - name: Dev gallery - HDMF
+        run: pip install --no-cache-dir git+https://github.com/hdmf-dev/hdmf@dev
+      - name: Dev gallery - HDMF-ZARR
+        run : pip install --no-cache-dir git+https://github.com/hdmf-dev/hdmf-zarr@dev
+
+      - name: Display installed packages and their sources
+        run: |
+          pip list
+
+      - name: Prepare data for tests
+        uses: ./.github/actions/load-data
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          s3-gin-bucket: ${{ secrets.S3_GIN_BUCKET }}
+          os: ${{ matrix.os }}
+
+
+      - name: Run full pytest
+        run: pytest -rsx -n auto --dist loadscope
