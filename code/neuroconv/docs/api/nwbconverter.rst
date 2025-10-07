@@ -1,4 +1,0 @@
-NWBConverter
-=============
-
-.. automodule:: neuroconv.nwbconverter
