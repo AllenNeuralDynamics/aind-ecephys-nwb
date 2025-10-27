@@ -90,6 +90,8 @@ def get_devices_from_rig_metadata(session_folder: str, segment_index: int = 0):
                     probe_device_name = probe_info["name"]
                     probe_model_name = probe_info.get("probe_model", None)
                     probe_device_manufacturer = probe_info.get("manufacturer", None)
+                    if probe_device_manufacturer is not None and isinstance(probe_device_manufacturer, dict):
+                        probe_device_manufacturer = probe_device_manufacturer.get("abbreviation", None)
                     probe_serial_number = probe_info.get("serial_number", None)
                     probe_device_description = ""
                     if probe_device_name is None:
