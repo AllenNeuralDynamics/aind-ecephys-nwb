@@ -532,7 +532,6 @@ if __name__ == "__main__":
                     # last resort: could not find a device
                     if probe_device_name is None:
                         logging.info("\tCould not load device information: using default Device")
-                        raise Exception
                         probe_device_name = "Device"
                         if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
                             probe_device_name = f"{probe_device_name}-{stream_index}"
