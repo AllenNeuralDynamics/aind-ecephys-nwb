@@ -23,9 +23,10 @@ from neuroconv.tools.nwb_helpers import (
     configure_backend,
     get_default_backend_configuration,
 )
-from neuroconv.tools.spikeinterface import (
+from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
     add_electrodes_to_nwbfile,
+    add_electrodes_info_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -35,6 +36,8 @@ from hdmf_zarr import NWBZarrIO
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
 from numcodecs import Blosc
 
+from aind_nwb_utils.utils import get_ephys_devices_from_metadata
+
 # AIND
 try:
     from aind_log_utils import log
@@ -42,8 +45,6 @@ try:
     HAVE_AIND_LOG_UTILS = True
 except ImportError:
     HAVE_AIND_LOG_UTILS = False
-
-from utils import get_devices_from_rig_metadata
 
 
 # filter and resample LFP
@@ -58,7 +59,7 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-parser = argparse.ArgumentParser(description="Export Neuropixels data to NWB")
+parser = argparse.ArgumentParser(description="Export Ecephys data to NWB")
 # positional arguments
 backend_group = parser.add_mutually_exclusive_group()
 backend_help = "NWB backend. It can be either 'hdf5' or 'zarr'."
@@ -76,7 +77,7 @@ stub_group.add_argument("static_stub", nargs="?", default="false", help=stub_hel
 stub_seconds_group = parser.add_mutually_exclusive_group()
 stub_seconds_help = "Duration of stub recording"
 stub_seconds_group.add_argument("--stub-seconds", default=10, help=stub_seconds_help)
-stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_help)
+stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_seconds_help)
 
 write_lfp_group = parser.add_mutually_exclusive_group()
 write_lfp_help = "Whether to write LFP electrical series"
@@ -155,7 +156,7 @@ if __name__ == "__main__":
             STUB_TEST = True
         else:
             STUB_TEST = True if args.static_stub == "true" else False
-        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub)
+        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub_secods)
 
         if args.skip_lfp:
             WRITE_LFP = False
@@ -254,7 +255,7 @@ if __name__ == "__main__":
 
     logging.info(f"\nExporting session: {session_name}")
 
-    job_json_files = [p for p in data_folder.iterdir() if p.suffix == ".json" and "job" in p.name]
+    job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
         with open(job_json_file) as f:
@@ -375,10 +376,10 @@ if __name__ == "__main__":
                 nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
 
                 # Find probe devices (this will only work for AIND)
-                devices_from_rig, target_locations = None, None
+                devices_from_metadata, target_locations = None, None
                 if input_folder is not None:
-                    devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                        ecephys_session_folder, segment_index=segment_index
+                    devices_from_metadata, target_locations = get_ephys_devices_from_metadata(
+                        input_folder
                     )
 
 
@@ -439,11 +440,16 @@ if __name__ == "__main__":
                         recording.annotate(
                             probes_info=recordings[0].get_annotation("probes_info")
                         )
+                        # remove aggregation key property, since it causes typing issue in NWB export
+                        if "aggregation_key" in recording.get_property_keys():
+                            recording.delete_property("aggregation_key")
                         if len(recordings_lfp) > 0:
                             recording_lfp = si.aggregate_channels(recordings_lfp)
                             recording_lfp.annotate(
                                 probes_info=recordings_lfp[0].get_annotation("probes_info")
                             )
+                            if "aggregation_key" in recording_lfp.get_property_keys():
+                                recording_lfp.delete_property("aggregation_key")
 
                     if STUB_TEST:
                         end_frame = int(STUB_SECONDS * recording.sampling_frequency)
@@ -454,8 +460,8 @@ if __name__ == "__main__":
 
                     # Add device and electrode group
                     probe_device_name = None
-                    if devices_from_rig:
-                        for device_name, device in devices_from_rig.items():
+                    if devices_from_metadata:
+                        for device_name, device in devices_from_metadata.items():
                             # add the device, since it could be a laser
                             if device_name not in nwbfile.devices:
                                 nwbfile.add_device(device)
@@ -465,7 +471,7 @@ if __name__ == "__main__":
                                 probe_device_name = device_name
                                 electrode_group_location = target_locations.get(device_name, "unknown")
                                 logging.info(
-                                    f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
+                                    f"\tFound device from metadata: {probe_device_name} at location {electrode_group_location}"
                                 )
                                 break
                     probe_info = None
@@ -481,9 +487,17 @@ if __name__ == "__main__":
                         if probes_info is not None and len(probes_info) == 1:
                             probe_info = probes_info[0]
                             model_name = probe_info.get("model_name")
+                            model_description = probe_info.get("description")
+                            is_quad_base = False
                             if model_name is not None and "Quad Base" in model_name:
+                                is_quad_base = True
+                            elif model_description is not None and "Quad Base" in model_description:
+                                is_quad_base = True
+                            if is_quad_base:
                                 logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
                                 probe_device_name = probe_info["name"]
+                            else:
+                                probe_info = None
 
                     if probe_info is not None:
                         probe_device_name = probe_info.get("name", None)
@@ -545,15 +559,15 @@ if __name__ == "__main__":
                         ]
                     else:
                         recording.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
-                        channel_groups = np.unique(recording.get_channel_groups())
+                        channel_groups_unique = np.unique(recording.get_channel_groups())
                         electrode_groups_metadata = [
                             dict(
-                                name=f"{probe_device_name}_group{g}",
-                                description=f"Recorded electrodes from probe {g}",
+                                name=group,
+                                description=f"Recorded electrodes from group {group}",
                                 location=electrode_group_location,
                                 device=probe_device_name,
                             )
-                            for g in channel_groups
+                            for group in channel_groups_unique
                         ]
                     electrode_metadata["Ecephys"]["ElectrodeGroup"] = electrode_groups_metadata
 
@@ -581,7 +595,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_electrodes_info_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -680,7 +694,7 @@ if __name__ == "__main__":
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False
+                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
