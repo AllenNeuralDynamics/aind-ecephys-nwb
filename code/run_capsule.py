@@ -35,6 +35,8 @@ from hdmf_zarr import NWBZarrIO
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
 from numcodecs import Blosc
 
+from aind_nwb_utils.utils import get_ephys_devices_from_metadata
+
 # AIND
 try:
     from aind_log_utils import log
@@ -42,8 +44,6 @@ try:
     HAVE_AIND_LOG_UTILS = True
 except ImportError:
     HAVE_AIND_LOG_UTILS = False
-
-from utils import get_devices_from_rig_metadata
 
 
 # filter and resample LFP
@@ -252,6 +252,8 @@ if __name__ == "__main__":
     else:
         io_class = NWBHDF5IO
 
+    logging.info(f"\nExporting session: {session_name}")
+
     job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
@@ -373,12 +375,11 @@ if __name__ == "__main__":
                 nwbfile_output_path = results_folder / f"{nwb_file_name}.nwb"
 
                 # Find probe devices (this will only work for AIND)
+                devices_from_metadata, target_locations = None, None
                 add_probe_device_from_rig = False
-                devices_from_rig, target_locations = None, None
                 if input_folder is not None:
-                    devices_from_rig, target_locations = get_devices_from_rig_metadata(
-                        input_folder,
-                        segment_index=segment_index
+                    devices_from_metadata, target_locations = get_ephys_devices_from_metadata(
+                        input_folder
                     )
 
                 probe_device_names = []
@@ -458,15 +459,15 @@ if __name__ == "__main__":
 
                     # Add device and electrode group
                     probe_device_name = None
-                    if devices_from_rig:
-                        for device_name, device in devices_from_rig.items():
+                    if devices_from_metadata:
+                        for device_name, device in devices_from_metadata.items():
                             # find probe device name associated to stream
                             probe_no_spaces = device_name.replace(" ", "")
                             if probe_no_spaces in stream_name:
                                 probe_device_name = device_name
                                 electrode_group_location = target_locations.get(device_name, "unknown")
                                 logging.info(
-                                    f"Found device from rig: {probe_device_name} at location {electrode_group_location}"
+                                    f"\tFound device from metadata: {probe_device_name} at location {electrode_group_location}"
                                 )
                                 add_probe_device_from_rig = True
                                 break
@@ -526,7 +527,7 @@ if __name__ == "__main__":
                             logging.info(f"\tAdding probe device: {probe_device.name} from recording metadata")
 
                     if add_probe_device_from_rig:
-                        probe_device = devices_from_rig[probe_device_name]
+                        probe_device = devices_from_metadata[probe_device_name]
                         if fixed_probe_device_name is not None:
                             probe_device.name = fixed_probe_device_name[probe_device_name]
                         if probe_device.name not in probe_device_names:
@@ -547,8 +548,8 @@ if __name__ == "__main__":
                         probe_device_names.append(probe_device_name)
 
                     # add other devices (e.g., lasers)
-                    if devices_from_rig:
-                        for device_name, device in devices_from_rig.items():
+                    if devices_from_metadata:
+                        for device_name, device in devices_from_metadata.items():
                             # skip fixed device names (already added)
                             if fixed_probe_device_name is not None and device_name in fixed_probe_device_name:
                                 continue
