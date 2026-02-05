@@ -25,8 +25,7 @@ from neuroconv.tools.nwb_helpers import (
 )
 from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
-    add_electrodes_to_nwbfile,
-    add_electrodes_info_to_nwbfile
+    add_electrodes_info_to_nwbfile,
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -377,11 +376,11 @@ if __name__ == "__main__":
 
                 # Find probe devices (this will only work for AIND)
                 devices_from_metadata, target_locations = None, None
+                add_probe_device_from_rig = False
                 if input_folder is not None:
                     devices_from_metadata, target_locations = get_ephys_devices_from_metadata(
                         input_folder
                     )
-
 
                 probe_device_names = []
                 for stream_index, stream_name in enumerate(streams_to_process):
@@ -462,10 +461,7 @@ if __name__ == "__main__":
                     probe_device_name = None
                     if devices_from_metadata:
                         for device_name, device in devices_from_metadata.items():
-                            # add the device, since it could be a laser
-                            if device_name not in nwbfile.devices:
-                                nwbfile.add_device(device)
-                            # find probe device name
+                            # find probe device name associated to stream
                             probe_no_spaces = device_name.replace(" ", "")
                             if probe_no_spaces in stream_name:
                                 probe_device_name = device_name
@@ -473,8 +469,11 @@ if __name__ == "__main__":
                                 logging.info(
                                     f"\tFound device from metadata: {probe_device_name} at location {electrode_group_location}"
                                 )
+                                add_probe_device_from_rig = True
                                 break
+
                     probe_info = None
+                    fixed_probe_device_name = None
                     if probe_device_name is None:
                         electrode_group_location = "unknown"
                         probes_info = recording.get_annotation("probes_info", None)
@@ -495,11 +494,9 @@ if __name__ == "__main__":
                                 is_quad_base = True
                             if is_quad_base:
                                 logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
-                                probe_device_name = probe_info["name"]
-                            else:
-                                probe_info = None
+                                fixed_probe_device_name = {probe_device_name: probe_info["name"]}
 
-                    if probe_info is not None:
+                    if probe_info is not None and not add_probe_device_from_rig:
                         probe_device_name = probe_info.get("name", None)
                         probe_device_manufacturer = probe_info.get("manufacturer", None)
                         probe_model_name = probe_info.get("model_name", None)
@@ -526,19 +523,42 @@ if __name__ == "__main__":
                             description=probe_device_description,
                             manufacturer=probe_device_manufacturer,
                         )
-                        if probe_device_name not in nwbfile.devices:
-                            nwbfile.add_device(probe_device)
-                            logging.info(f"\tAdded probe device: {probe_device.name} from recording metadata")
+                        if probe_device_name not in probe_device_names:
+                            logging.info(f"\tAdding probe device: {probe_device.name} from recording metadata")
+
+                    if add_probe_device_from_rig:
+                        probe_device = devices_from_metadata[probe_device_name]
+                        if fixed_probe_device_name is not None:
+                            probe_device.name = fixed_probe_device_name[probe_device_name]
+                        if probe_device.name not in probe_device_names:
+                            logging.info(f"\tAdding probe device: {probe_device.name} from asset metadata")
+
                     # last resort: could not find a device
                     if probe_device_name is None:
-                        logging.info("\tCould not load device information: using default Device")
                         probe_device_name = "Device"
                         if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
                             probe_device_name = f"{probe_device_name}-{stream_index}"
                         probe_device = Device(name=probe_device_name, description="Default device")
+                        if probe_device.name not in probe_device_names:
+                            logging.info(f"\tCould not load device information: adding default probe device")
 
                     # keep track of all added probe device names
-                    probe_device_names.append(probe_device_name)
+                    if probe_device_name not in probe_device_names:
+                        nwbfile.add_device(probe_device)
+                        probe_device_names.append(probe_device_name)
+
+                    # add other devices (e.g., lasers)
+                    if devices_from_metadata:
+                        for device_name, device in devices_from_metadata.items():
+                            # skip fixed device names (already added)
+                            if fixed_probe_device_name is not None and device_name in fixed_probe_device_name:
+                                continue
+                            # skip other probe devices
+                            if any(device_name.replace(" ", "") in s for s in streams_to_process):
+                                continue
+                            if device_name not in nwbfile.devices:
+                                logging.info(f"\tAdding other device: {device_name} from asset metadata")
+                                nwbfile.add_device(device)
 
                     electrode_metadata = dict(
                         Ecephys=dict(
@@ -694,7 +714,7 @@ if __name__ == "__main__":
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True
+                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True,
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
