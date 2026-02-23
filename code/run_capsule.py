@@ -47,7 +47,7 @@ except ImportError:
 
 
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, margin_ms=2000)
 lfp_sampling_rate = 2500
 
 # default compressors
