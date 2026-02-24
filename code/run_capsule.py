@@ -252,8 +252,6 @@ if __name__ == "__main__":
     else:
         io_class = NWBHDF5IO
 
-    logging.info(f"\nExporting session: {session_name}")
-
     job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
