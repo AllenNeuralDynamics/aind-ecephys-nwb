@@ -48,7 +48,7 @@ except ImportError:
 
 
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
 
 # default compressors
@@ -694,7 +694,10 @@ if __name__ == "__main__":
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True
+                                folder=scratch_folder / f"{recording_name}-LFP",
+                                verbose=False,
+                                overwrite=True,
+                                chunk_duration="60s"
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
