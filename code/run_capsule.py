@@ -269,10 +269,10 @@ if __name__ == "__main__":
     for session_name in session_names:
         logging.info(f"Session: {session_name}")
         # filter job_dicts for this session
-        job_dicts = [jd for jd in job_dicts if jd["session_name"] == session_name]
-        input_folder = job_dicts[0].get("input_folder")
+        job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
+        input_folder = job_dicts_session[0].get("input_folder")
 
-        recording_names = [job_dict["recording_name"] for job_dict in job_dicts]        
+        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
 
         # find blocks and recordings
         block_ids = []
@@ -388,7 +388,7 @@ if __name__ == "__main__":
                     # load JSON and recordings
                     # we need lists because multiple groups are saved to different JSON files
                     recording_job_dicts = []
-                    for job_dict in job_dicts:
+                    for job_dict in job_dicts_session:
                         if recording_name in job_dict["recording_name"]:
                             recording_job_dicts.append(job_dict)
 
