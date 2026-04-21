@@ -26,7 +26,8 @@ from neuroconv.tools.nwb_helpers import (
 )
 from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
-    add_electrodes_to_nwbfile
+    add_electrodes_to_nwbfile,
+    _add_electrode_groups_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -109,9 +110,9 @@ lfp_spatial_subsampling_group.add_argument("static_lfp_spatial_factor", nargs="?
 
 lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
 lfp_highpass_filter_help = (
-    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1 Hz. Use 0 to skip filtering."
+    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0 (skip)."
 )
-lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0.1, help=lfp_highpass_filter_help)
+lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0, help=lfp_highpass_filter_help)
 lfp_highpass_filter_group.add_argument("static_lfp_highpass_freq_min", nargs="?", help=lfp_highpass_filter_help)
 
 # common median referencing for probes in agar
@@ -587,6 +588,9 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
+                        # TODO: remove electrode groups once add_electrodes_to_nwbfile is fixed
+                        # see: https://github.com/catalystneuro/neuroconv/pull/1718
+                        _add_electrode_groups_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
                         add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
@@ -680,7 +684,7 @@ if __name__ == "__main__":
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
                             logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
+                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN, ignore_low_freq_error=True)
 
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
