@@ -26,8 +26,7 @@ from neuroconv.tools.nwb_helpers import (
 )
 from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
-    add_electrodes_to_nwbfile,
-    _add_electrode_groups_to_nwbfile
+    add_recording_metadata_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -588,10 +587,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        # TODO: remove electrode groups once add_electrodes_to_nwbfile is fixed
-                        # see: https://github.com/catalystneuro/neuroconv/pull/1718
-                        _add_electrode_groups_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
-                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_recording_metadata_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
