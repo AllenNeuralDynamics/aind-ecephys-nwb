@@ -1,6 +1,7 @@
 """ Writes RAW ephys and LFP to an NWB file """
 
 import sys
+import warnings
 import argparse
 from pathlib import Path
 import numpy as np
@@ -25,8 +26,7 @@ from neuroconv.tools.nwb_helpers import (
 )
 from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
-    add_electrodes_to_nwbfile,
-    add_electrodes_info_to_nwbfile
+    add_electrodes_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -47,9 +47,13 @@ except ImportError:
     HAVE_AIND_LOG_UTILS = False
 
 
+warnings.filterwarnings("ignore")
+
+
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
+lfp_save_chunk_duration = "60s"
 
 # default compressors
 default_electrical_series_compressors = dict(hdf5="gzip", zarr=Blosc(cname="zstd", clevel=9, shuffle=Blosc.BITSHUFFLE))
@@ -415,7 +419,7 @@ if __name__ == "__main__":
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
                             timestamps = np.load(timestamps_file)
-                            recording.set_times(timestamps)
+                            recording.set_times(timestamps, with_warning=False)
                         recordings.append(recording)
 
                         logging.info(f"\t\t{recording_job_dict['recording_name']}")
@@ -428,7 +432,7 @@ if __name__ == "__main__":
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
                                 timestamps_lfp = np.load(timestamps_file_lfp)
-                                recording_lfp.set_times(timestamps_lfp)
+                                recording_lfp.set_times(timestamps_lfp, with_warning=False)
                             recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
 
@@ -583,7 +587,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes_info_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_electrodes_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -685,7 +689,7 @@ if __name__ == "__main__":
                                 folder=scratch_folder / f"{recording_name}-LFP",
                                 verbose=False,
                                 overwrite=True,
-                                chunk_duration="60s"
+                                chunk_duration=lfp_save_chunk_duration
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
