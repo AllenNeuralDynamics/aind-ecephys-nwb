@@ -109,9 +109,9 @@ lfp_spatial_subsampling_group.add_argument("static_lfp_spatial_factor", nargs="?
 
 lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
 lfp_highpass_filter_help = (
-    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0 (skip)."
+    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1. (Use 0 to skip)."
 )
-lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0, help=lfp_highpass_filter_help)
+lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0.1, help=lfp_highpass_filter_help)
 lfp_highpass_filter_group.add_argument("static_lfp_highpass_freq_min", nargs="?", help=lfp_highpass_filter_help)
 
 # common median referencing for probes in agar
