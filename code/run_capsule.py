@@ -47,7 +47,7 @@ except ImportError:
 
 
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.1, freq_max=500)
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, margin_ms=2000)
 lfp_sampling_rate = 2500
 
 # default compressors
@@ -181,8 +181,8 @@ if __name__ == "__main__":
         else:
             SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
 
-    # Use CO_CPUS/SLURM_CPUS_ON_NODE env variable if available
-    N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("SLURM_CPUS_ON_NODE")
+    # Use CO_CPUS/N_JOBS_EXT env variable if available
+    N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
     N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
     job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False, mp_context="spawn")
     si.set_global_job_kwargs(**job_kwargs)
