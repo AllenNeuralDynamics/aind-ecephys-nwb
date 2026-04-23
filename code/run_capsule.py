@@ -1,6 +1,7 @@
 """ Writes RAW ephys and LFP to an NWB file """
 
 import sys
+import warnings
 import argparse
 from pathlib import Path
 import numpy as np
@@ -25,7 +26,7 @@ from neuroconv.tools.nwb_helpers import (
 )
 from neuroconv.tools.spikeinterface.spikeinterface import (
     add_recording_to_nwbfile,
-    add_electrodes_info_to_nwbfile,
+    add_recording_metadata_to_nwbfile
 )
 
 from pynwb import NWBHDF5IO, NWBFile
@@ -46,9 +47,13 @@ except ImportError:
     HAVE_AIND_LOG_UTILS = False
 
 
+warnings.filterwarnings("ignore")
+
+
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, margin_ms=2000)
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
+lfp_save_chunk_duration = "60s"
 
 # default compressors
 default_electrical_series_compressors = dict(hdf5="gzip", zarr=Blosc(cname="zstd", clevel=9, shuffle=Blosc.BITSHUFFLE))
@@ -104,7 +109,7 @@ lfp_spatial_subsampling_group.add_argument("static_lfp_spatial_factor", nargs="?
 
 lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
 lfp_highpass_filter_help = (
-    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1 Hz. Use 0 to skip filtering."
+    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1. (Use 0 to skip)."
 )
 lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0.1, help=lfp_highpass_filter_help)
 lfp_highpass_filter_group.add_argument("static_lfp_highpass_freq_min", nargs="?", help=lfp_highpass_filter_help)
@@ -414,7 +419,7 @@ if __name__ == "__main__":
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
                             timestamps = np.load(timestamps_file)
-                            recording.set_times(timestamps)
+                            recording.set_times(timestamps, with_warning=False)
                         recordings.append(recording)
 
                         logging.info(f"\t\t{recording_job_dict['recording_name']}")
@@ -427,7 +432,7 @@ if __name__ == "__main__":
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
                                 timestamps_lfp = np.load(timestamps_file_lfp)
-                                recording_lfp.set_times(timestamps_lfp)
+                                recording_lfp.set_times(timestamps_lfp, with_warning=False)
                             recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
 
@@ -458,6 +463,15 @@ if __name__ == "__main__":
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
                     # Add device and electrode group
+                    probegroup = recording.get_probegroup()
+                    assert len(probegroup.probes) == 1, (
+                        "Grouping failed for this session. Each stream should be associated with a single probe!"
+                    )
+                    probe = probegroup.probes[0]
+                    electrode_group_location = "unknown"
+                    # dict with "probe_device_name", "probe", and "location"
+
+                    # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
                     if devices_from_metadata:
                         for device_name, device in devices_from_metadata.items():
@@ -469,97 +483,52 @@ if __name__ == "__main__":
                                 logging.info(
                                     f"\tFound device from metadata: {probe_device_name} at location {electrode_group_location}"
                                 )
-                                add_probe_device_from_rig = True
+                                # 1a. Apply fix for Quad Base probes to get probe device name from probe metadata instead of rig.json,
+                                # since rig.json has the same name for all shanks but we need to differentiate them
+                                model_name = probe.model_name
+                                model_description = probe.description
+                                if (model_name is not None and "Quad Base" in model_name) or \
+                                    (model_description is not None and "Quad Base" in model_description):
+                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe.name}")
+                                    probe_device_name = probe.name
                                 break
 
-                    probe_info = None
-                    fixed_probe_device_name = None
+                    # 2. If no metadata devices, use probeinterface probes info from recording annotations
                     if probe_device_name is None:
-                        electrode_group_location = "unknown"
-                        probes_info = recording.get_annotation("probes_info", None)
-                        if probes_info is not None and len(probes_info) == 1:
-                            probe_info = probes_info[0]
-                    else:
-                        # deal with Quad Base: the rig.json has the same name for the different shanks
-                        # but we have to load the single-shank probe device name
-                        probes_info = recording.get_annotation("probes_info", None)
-                        if probes_info is not None and len(probes_info) == 1:
-                            probe_info = probes_info[0]
-                            model_name = probe_info.get("model_name")
-                            model_description = probe_info.get("description")
-                            is_quad_base = False
-                            if model_name is not None and "Quad Base" in model_name:
-                                is_quad_base = True
-                            elif model_description is not None and "Quad Base" in model_description:
-                                is_quad_base = True
-                            if is_quad_base:
-                                logging.info(f"Detected Quade Base: changing name from {probe_device_name} to {probe_info['name']}")
-                                fixed_probe_device_name = {probe_device_name: probe_info["name"]}
+                        probe_device_name = probe.name or probe.model_name or "Probe"
+                        logging.info(f"\tAdding probe information from recording metadata")
 
-                    if probe_info is not None and not add_probe_device_from_rig:
-                        probe_device_name = probe_info.get("name", None)
-                        probe_device_manufacturer = probe_info.get("manufacturer", None)
-                        probe_model_name = probe_info.get("model_name", None)
-                        probe_serial_number = probe_info.get("serial_number", None)
-                        probe_description = probe_info.get("description", None)
-                        probe_device_description = ""
-                        probe_device_name = probe_device_name or probe_model_name or "Probe"
+                    # 3. Add probe to NWB
+                    probe_device_manufacturer = probe.manufacturer
+                    probe_model_name = probe.model_name
+                    probe_serial_number = probe.serial_number
+                    probe_description = probe.description
+                    probe_device_description = ""
 
-                        if probe_model_name is not None:
-                            probe_device_description += f"Model: {probe_device_description}"
-                        if probe_serial_number is not None:
-                            if len(probe_device_description) > 0:
-                                probe_device_description += " - "
-                            probe_device_description += f"Serial number: {probe_serial_number}"
-                        if probe_description is not None:
-                            if len(probe_device_description) > 0:
-                                probe_device_description += " - "
-                            probe_device_description += f"Description: {probe_description}"
-                        # this is needed to account for a case where multiple streams have the same device name
-                        if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
-                            probe_device_name = f"{probe_device_name}-{stream_index}"
-                        probe_device = Device(
-                            name=probe_device_name,
-                            description=probe_device_description,
-                            manufacturer=probe_device_manufacturer,
-                        )
-                        if probe_device_name not in probe_device_names:
-                            logging.info(f"\tAdding probe device: {probe_device.name} from recording metadata")
-
-                    if add_probe_device_from_rig:
-                        probe_device = devices_from_metadata[probe_device_name]
-                        if fixed_probe_device_name is not None:
-                            probe_device.name = fixed_probe_device_name[probe_device_name]
-                        if probe_device.name not in probe_device_names:
-                            logging.info(f"\tAdding probe device: {probe_device.name} from asset metadata")
-
-                    # last resort: could not find a device
-                    if probe_device_name is None:
-                        probe_device_name = "Device"
-                        if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
-                            probe_device_name = f"{probe_device_name}-{stream_index}"
-                        probe_device = Device(name=probe_device_name, description="Default device")
-                        if probe_device.name not in probe_device_names:
-                            logging.info(f"\tCould not load device information: adding default probe device")
-
-                    # keep track of all added probe device names
-                    if probe_device_name not in probe_device_names:
+                    if probe_model_name is not None:
+                        probe_device_description += f"Model: {probe_model_name}"
+                    if probe_serial_number is not None:
+                        if len(probe_device_description) > 0:
+                            probe_device_description += " - "
+                        probe_device_description += f"Serial number: {probe_serial_number}"
+                    if probe_description is not None:
+                        if len(probe_device_description) > 0:
+                            probe_device_description += " - "
+                        probe_device_description += f"Description: {probe_description}"
+                    # this is needed to account for a case where multiple streams have the same device name
+                    if len(streams_to_process) > 1 and probe_device_name in probe_device_names:
+                        probe_device_name = f"{probe_device_name}-{stream_index}"
+                    probe_device = Device(
+                        name=probe_device_name,
+                        description=probe_device_description,
+                        manufacturer=probe_device_manufacturer,
+                    )
+                    if probe_device_name not in nwbfile.devices:
                         nwbfile.add_device(probe_device)
-                        probe_device_names.append(probe_device_name)
+                        logging.info(f"\tAdded probe device: {probe_device.name} - {probe_device.description}")
+                    probe_device_names.append(probe_device_name)
 
-                    # add other devices (e.g., lasers)
-                    if devices_from_metadata:
-                        for device_name, device in devices_from_metadata.items():
-                            # skip fixed device names (already added)
-                            if fixed_probe_device_name is not None and device_name in fixed_probe_device_name:
-                                continue
-                            # skip other probe devices
-                            if any(device_name.replace(" ", "") in s for s in streams_to_process):
-                                continue
-                            if device_name not in nwbfile.devices:
-                                logging.info(f"\tAdding other device: {device_name} from asset metadata")
-                                nwbfile.add_device(device)
-
+                    # Add electrode metadata
                     electrode_metadata = dict(
                         Ecephys=dict(
                             Device=[dict(name=probe_device_name)],
@@ -615,7 +584,7 @@ if __name__ == "__main__":
                         electrical_series_to_configure.append(add_electrical_series_kwargs["es_key"])
                     else:
                         # always add recording electrodes, as they will be used by Units
-                        add_electrodes_info_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
+                        add_recording_metadata_to_nwbfile(recording=recording, nwbfile=nwbfile, metadata=electrode_metadata)
 
                     if WRITE_LFP:
                         electrical_series_name = f"ElectricalSeries{probe_device_name}-LFP"
@@ -708,13 +677,16 @@ if __name__ == "__main__":
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
                             logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN)
+                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN, ignore_low_freq_error=True)
 
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
                             logging.info(f"\tSaving preprocessed LFP to binary")
                             recording_lfp = recording_lfp.save(
-                                folder=scratch_folder / f"{recording_name}-LFP", verbose=False, overwrite=True,
+                                folder=scratch_folder / f"{recording_name}-LFP",
+                                verbose=False,
+                                overwrite=True,
+                                chunk_duration=lfp_save_chunk_duration
                             )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
