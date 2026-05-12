@@ -534,6 +534,7 @@ if __name__ == "__main__":
                                 manufacturer=probe_device.manufacturer,
                             )
                             probe_device = new_device
+                            probe_device_name = fixed_probe_device_name[probe_device_name]
                         if probe_device.name not in probe_device_names:
                             logging.info(f"\tAdding probe device: {probe_device.name} from asset metadata")
 
