@@ -527,7 +527,13 @@ if __name__ == "__main__":
                     if add_probe_device_from_rig:
                         probe_device = devices_from_metadata[probe_device_name]
                         if fixed_probe_device_name is not None:
-                            probe_device.name = fixed_probe_device_name[probe_device_name]
+                            # Create new device with fixed name
+                            new_device = Device(
+                                name=fixed_probe_device_name[probe_device_name],
+                                description=probe_device.description,
+                                manufacturer=probe_device.manufacturer,
+                            )
+                            probe_device = new_device
                         if probe_device.name not in probe_device_names:
                             logging.info(f"\tAdding probe device: {probe_device.name} from asset metadata")
 
