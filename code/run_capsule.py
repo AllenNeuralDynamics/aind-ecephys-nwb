@@ -408,6 +408,12 @@ if __name__ == "__main__":
                         skip_times = recording_job_dict.get("skip_times", False)
                         if skip_times:
                             recording.reset_times()
+                        if recording.get_dtype().kind == "u":
+                            logging.info(
+                                f"Recording has unsigned integer dtype {recording.get_dtype()}. "
+                                "Converting to signed integer."
+                            )
+                            recording = spre.unsigned_to_signed(recording)
                         timestamps_file = timestamps_folder / f"{recording_name}.npy"
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
@@ -421,6 +427,12 @@ if __name__ == "__main__":
                             recording_lfp = si.load(recording_job_dict["recording_lfp_dict"], base_folder=data_folder)
                             if skip_times:
                                 recording_lfp.reset_times()
+                            if recording_lfp.get_dtype().kind == "u":
+                                logging.info(
+                                    f"Recording LFP has unsigned integer dtype {recording_lfp.get_dtype()}. "
+                                    "Converting to signed integer."
+                                )
+                                recording_lfp = spre.unsigned_to_signed(recording_lfp)
                             timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
