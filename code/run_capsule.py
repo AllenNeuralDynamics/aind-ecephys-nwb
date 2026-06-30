@@ -279,7 +279,7 @@ if __name__ == "__main__":
         job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
         input_folder = job_dicts_session[0].get("input_folder")
 
-        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]        
+        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
 
         # find blocks and recordings
         block_ids = []
