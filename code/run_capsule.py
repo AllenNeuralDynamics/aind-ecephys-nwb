@@ -34,7 +34,7 @@ from pynwb.file import Device
 from hdmf_zarr import NWBZarrIO
 
 # for NWB Zarr, let's use built-in compressors, so thay can be read without Python
-from numcodecs import Blosc
+from zarr.codecs import BloscCodec
 
 from aind_nwb_utils.utils import get_ephys_devices_from_metadata
 
@@ -56,7 +56,7 @@ lfp_sampling_rate = 2500
 lfp_save_chunk_duration = "60s"
 
 # default compressors
-default_electrical_series_compressors = dict(hdf5="gzip", zarr=Blosc(cname="zstd", clevel=9, shuffle=Blosc.BITSHUFFLE))
+default_electrical_series_compressors = dict(hdf5="gzip", zarr=BloscCodec(cname="zstd", clevel=9, shuffle="bitshuffle"))
 
 # default event line from open ephys
 data_folder = Path("../data/")
@@ -724,7 +724,7 @@ if __name__ == "__main__":
 
                 for key in backend_configuration.dataset_configurations.keys():
                     if any([es_name in key for es_name in electrical_series_to_configure]) and "timestamps" not in key:
-                        backend_configuration.dataset_configurations[key].compression_method = es_compressor
+                        backend_configuration.dataset_configurations[key].compressors = [es_compressor]
                 configure_backend(nwbfile=nwbfile, backend_configuration=backend_configuration)
 
                 logging.info(f"Writing NWB file to {nwbfile_output_path}")
