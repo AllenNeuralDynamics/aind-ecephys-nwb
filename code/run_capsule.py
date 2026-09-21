@@ -662,6 +662,9 @@ if __name__ == "__main__":
                                 recording_lfp.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
 
                         channel_ids = recording_lfp.get_channel_ids()
+                        # keep track of the group names, since some preprocessing steps (e.g. channel selection)
+                        # re-attach the probe and reset the "group" property to integer values
+                        lfp_group_names = dict(zip(channel_ids, recording_lfp.get_channel_groups()))
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
                         # similar processing to allensdk
@@ -710,6 +713,13 @@ if __name__ == "__main__":
                                 overwrite=True,
                                 chunk_duration=lfp_save_chunk_duration
                             )
+
+                        # restore the group names: preprocessing steps that select channels re-attach the
+                        # probe and reset "group" to integers, which would make neuroconv create a spurious
+                        # "Device"/electrode group instead of linking to the probe device
+                        recording_lfp.set_channel_groups(
+                            [lfp_group_names[channel_id] for channel_id in recording_lfp.get_channel_ids()]
+                        )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
                         add_recording_to_nwbfile(
