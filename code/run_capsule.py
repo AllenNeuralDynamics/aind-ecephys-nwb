@@ -452,10 +452,6 @@ if __name__ == "__main__":
                     if len(recording_job_dicts_sorted) > 1:
                         logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
                         recording = si.aggregate_channels(recordings)
-                        # probes_info get lost in aggregation, so we need to manually set them
-                        recording.annotate(
-                            probes_info=recordings[0].get_annotation("probes_info")
-                        )
                         # remove aggregation key property, since it causes typing issue in NWB export
                         if "aggregation_key" in recording.get_property_keys():
                             recording.delete_property("aggregation_key")
@@ -474,22 +470,27 @@ if __name__ == "__main__":
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
-                    # Add device and electrode group
-                    # For the NWB case, since the parser only read channel locations, the job-dispatch creates
-                    # a probe with the correct probe_device_name, so that neuroconv uses the right existing device
-                    if recording_job_dicts[0].get("probe_dict") is not None:
-                        logging.info(f"\tAdding probe information from job-dispatch metadata")
-                        probe_dict = recording_job_dicts[0]["probe_dict"]
-                        probe = pi.Probe.from_dict(probe_dict)
-                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
+                    logging.info(f"\tAdding probe information from recording metadata")
+                    probegroup = recording.get_probegroup()
+                    electrode_group_location = "unknown"
+
+                    if len(probegroup.probes) > 1:
+                        model_names = [probe.model_name for probe in probegroup.probes]
+                        model_descriptions = [probe.description for probe in probegroup.probes]
+                        probe_names = [probe.name for probe in probegroup.probes]
+                        model_name = model_names[0] if len(set(model_names)) == 1 else None
+                        model_description = model_descriptions[0] if len(set(model_descriptions)) == 1 else None
+                        probe_name = probe_names[0] if len(set(probe_names)) == 1 else None
+                        probe_manufacturers = [probe.manufacturer for probe in probegroup.probes]
+                        probe_manufacturer = probe_manufacturers[0] if len(set(probe_manufacturers)) == 1 else None
+                        serial_numbers = [probe.serial_number for probe in probegroup.probes]
+                        serial_number = serial_numbers[0] if len(set(serial_numbers)) == 1 else None
                     else:
-                        logging.info(f"\tAdding probe information from recording metadata")
-                        probegroup = recording.get_probegroup()
-                        assert len(probegroup.probes) == 1, (
-                            "Grouping failed for this session. Each stream should be associated with a single probe!"
-                        )
-                        probe = probegroup.probes[0]
-                        electrode_group_location = "unknown"
+                        model_name = probegroup.probes[0].model_name
+                        model_description = probegroup.probes[0].description
+                        probe_name = probegroup.probes[0].name
+                        probe_manufacturer = probegroup.probes[0].manufacturer
+                        serial_number = probegroup.probes[0].serial_number
 
                     # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
@@ -505,24 +506,22 @@ if __name__ == "__main__":
                                 )
                                 # 1a. Apply fix for Quad Base probes to get probe device name from probe metadata instead of rig.json,
                                 # since rig.json has the same name for all shanks but we need to differentiate them
-                                model_name = probe.model_name
-                                model_description = probe.description
                                 if (model_name is not None and "Quad Base" in model_name) or \
                                     (model_description is not None and "Quad Base" in model_description):
-                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe.name}")
-                                    probe_device_name = probe.name
+                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe_name}")
+                                    probe_device_name = probe_name
                                 break
 
                     # 2. If no metadata devices, use probeinterface probes info from recording annotations
                     if probe_device_name is None:
-                        probe_device_name = probe.name or probe.model_name or "Probe"
+                        probe_device_name = probe_name or model_name or "Probe"
                         logging.info(f"\tAdding probe information from recording metadata")
 
                     # 3. Add probe to NWB
-                    probe_device_manufacturer = probe.manufacturer
-                    probe_model_name = probe.model_name
-                    probe_serial_number = probe.serial_number
-                    probe_description = probe.description
+                    probe_device_manufacturer = probe_manufacturer
+                    probe_model_name = model_name
+                    probe_serial_number = serial_number
+                    probe_description = model_description
                     probe_device_description = ""
 
                     if probe_model_name is not None:
