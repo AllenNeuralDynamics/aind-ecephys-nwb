@@ -186,8 +186,8 @@ if __name__ == "__main__":
         else:
             SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
 
-    # Use CO_CPUS/SLURM_CPUS_ON_NODE env variable if available
-    N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("SLURM_CPUS_ON_NODE")
+    # Use CO_CPUS/N_JOBS_EXT env variable if available
+    N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
     N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
     job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False, mp_context="spawn")
     si.set_global_job_kwargs(**job_kwargs)
@@ -279,7 +279,11 @@ if __name__ == "__main__":
         job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
         input_folder = job_dicts_session[0].get("input_folder")
 
+<<<<<<< HEAD
         recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]        
+=======
+        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
+>>>>>>> c5cb3308511f9bb3505806b2a6f34c654715155d
 
         # find blocks and recordings
         block_ids = []
@@ -381,11 +385,11 @@ if __name__ == "__main__":
 
                 # Find probe devices (this will only work for AIND)
                 devices_from_metadata, target_locations = None, None
+                add_probe_device_from_rig = False
                 if input_folder is not None:
                     devices_from_metadata, target_locations = get_ephys_devices_from_metadata(
                         input_folder
                     )
-
 
                 probe_device_names = []
                 for stream_index, stream_name in enumerate(streams_to_process):
@@ -415,6 +419,12 @@ if __name__ == "__main__":
                         skip_times = recording_job_dict.get("skip_times", False)
                         if skip_times:
                             recording.reset_times()
+                        if recording.get_dtype().kind == "u":
+                            logging.info(
+                                f"Recording has unsigned integer dtype {recording.get_dtype()}. "
+                                "Converting to signed integer."
+                            )
+                            recording = spre.unsigned_to_signed(recording)
                         timestamps_file = timestamps_folder / f"{recording_name}.npy"
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
@@ -428,6 +438,12 @@ if __name__ == "__main__":
                             recording_lfp = si.load(recording_job_dict["recording_lfp_dict"], base_folder=data_folder)
                             if skip_times:
                                 recording_lfp.reset_times()
+                            if recording_lfp.get_dtype().kind == "u":
+                                logging.info(
+                                    f"Recording LFP has unsigned integer dtype {recording_lfp.get_dtype()}. "
+                                    "Converting to signed integer."
+                                )
+                                recording_lfp = spre.unsigned_to_signed(recording_lfp)
                             timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
@@ -463,22 +479,27 @@ if __name__ == "__main__":
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
                     # Add device and electrode group
-                    probegroup = recording.get_probegroup()
-                    assert len(probegroup.probes) == 1, (
-                        "Grouping failed for this session. Each stream should be associated with a single probe!"
-                    )
-                    probe = probegroup.probes[0]
-                    electrode_group_location = "unknown"
-                    # dict with "probe_device_name", "probe", and "location"
+                    # For the NWB case, since the parser only read channel locations, the job-dispatch creates
+                    # a probe with the correct probe_device_name, so that neuroconv uses the right existing device
+                    if recording_job_dicts[0].get("probe_dict") is not None:
+                        logging.info(f"\tAdding probe information from job-dispatch metadata")
+                        probe_dict = recording_job_dicts[0]["probe_dict"]
+                        probe = pi.Probe.from_dict(probe_dict)
+                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
+                    else:
+                        logging.info(f"\tAdding probe information from recording metadata")
+                        probegroup = recording.get_probegroup()
+                        assert len(probegroup.probes) == 1, (
+                            "Grouping failed for this session. Each stream should be associated with a single probe!"
+                        )
+                        probe = probegroup.probes[0]
+                        electrode_group_location = "unknown"
 
                     # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
                     if devices_from_metadata:
                         for device_name, device in devices_from_metadata.items():
-                            # add the device, since it could be a laser
-                            if device_name not in nwbfile.devices:
-                                nwbfile.add_device(device)
-                            # find probe device name
+                            # find probe device name associated to stream
                             probe_no_spaces = device_name.replace(" ", "")
                             if probe_no_spaces in stream_name:
                                 probe_device_name = device_name
