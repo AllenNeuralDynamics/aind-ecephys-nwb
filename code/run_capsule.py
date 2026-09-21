@@ -395,8 +395,11 @@ if __name__ == "__main__":
                     # load JSON and recordings
                     # we need lists because multiple groups are saved to different JSON files
                     recording_job_dicts = []
+                    group_names = []
                     for job_dict in job_dicts_session:
                         if recording_name in job_dict["recording_name"]:
+                            logging.info(f"Found {recording_name} in job dict: {job_dict['recording_name']}")
+                            group_names.append(recording_names)
                             recording_job_dicts.append(job_dict)
 
                     recording_lfp = None

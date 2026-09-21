@@ -1,4 +1,4 @@
-# hash:sha256:625f793c6bd91a7e36222c8bdd3e9a48c87a19db65a64b28ec0780b61708be70
+# hash:sha256:6df7d30261ad0700d24e3a4b493508d61c4149629d9bd3bf3cd07f366c3c51d8
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/mambaforge3:24.5.0-0-python3.12.4-ubuntu22.04
 
@@ -13,7 +13,7 @@ RUN apt-get update \
 
 RUN pip install -U --no-cache-dir \
     aind-log-utils==0.2.3 \
-    aind-nwb-utils==0.2.6 \
+    aind-nwb-utils==0.2.9 \
     hdmf==6.1.0 \
     hdmf-zarr==0.13.0 \
     neuroconv==0.9.3 \
