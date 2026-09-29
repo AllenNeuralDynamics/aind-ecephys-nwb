@@ -277,7 +277,7 @@ if __name__ == "__main__":
         job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
         input_folder = job_dicts_session[0].get("input_folder")
 
-        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]        
+        recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
 
         # find blocks and recordings
         block_ids = []
@@ -487,11 +487,13 @@ if __name__ == "__main__":
                         serial_numbers = [probe.serial_number for probe in probegroup.probes]
                         serial_number = serial_numbers[0] if len(set(serial_numbers)) == 1 else None
                     else:
-                        model_name = probegroup.probes[0].model_name
-                        model_description = probegroup.probes[0].description
-                        probe_name = probegroup.probes[0].name
-                        probe_manufacturer = probegroup.probes[0].manufacturer
-                        serial_number = probegroup.probes[0].serial_number
+                        probe = probegroup.probes[0]
+                        model_name = probe.model_name
+                        model_description = probe.description
+                        probe_name = probe.name
+                        probe_manufacturer = probe.manufacturer
+                        serial_number = probe.serial_number
+                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
 
                     # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
