@@ -486,6 +486,11 @@ if __name__ == "__main__":
                         probe_manufacturer = probe_manufacturers[0] if len(set(probe_manufacturers)) == 1 else None
                         serial_numbers = [probe.serial_number for probe in probegroup.probes]
                         serial_number = serial_numbers[0] if len(set(serial_numbers)) == 1 else None
+                        electrode_group_locations = [
+                            probe.annotations.get("electrode_group_location", "unknown")
+                            for probe in probegroup.probes
+                        ]
+                        electrode_group_location = electrode_group_locations[0] if len(set(electrode_group_locations)) == 1 else None
                     else:
                         probe = probegroup.probes[0]
                         model_name = probe.model_name
