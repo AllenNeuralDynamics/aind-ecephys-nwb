@@ -139,8 +139,6 @@ def run() -> None:
             else:
                 raise ValueError(f"Invalid parameters: {PARAMS} is not a valid JSON string or file path")
 
-        LOGGING = nwb_ecephys_params.pop("logging", None)
-
         NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
         STUB_TEST = nwb_ecephys_params.get("stub", False)
         STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
@@ -151,6 +149,9 @@ def run() -> None:
         HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
         SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
     else:
+        with open("params.json", "r") as f:
+            nwb_ecephys_params = json.load(f)
+
         NWB_BACKEND = args.static_backend or args.backend
         stub = args.stub or args.static_stub
         if args.stub:
@@ -182,6 +183,9 @@ def run() -> None:
             SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
         else:
             SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
+
+    # TODO: temporary - remove from params.json when logging is distributed by pipeline
+    LOGGING = nwb_ecephys_params.pop("logging", None)
 
     # Use CO_CPUS/N_JOBS_EXT env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
