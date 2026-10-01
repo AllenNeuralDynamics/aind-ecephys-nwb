@@ -41,9 +41,6 @@ from aind_nwb_utils.utils import get_ephys_devices_from_metadata
 warnings.filterwarnings("ignore")
 
 
-warnings.filterwarnings("ignore")
-
-
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
