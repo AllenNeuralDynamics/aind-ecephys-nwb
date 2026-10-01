@@ -45,6 +45,7 @@ warnings.filterwarnings("ignore")
 lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
 lfp_save_chunk_duration = "60s"
+lfp_gap_tolerance_ms = 1
 
 # default compressors
 default_electrical_series_compressors = dict(hdf5="gzip", zarr=Blosc(cname="zstd", clevel=9, shuffle=Blosc.BITSHUFFLE))
@@ -635,7 +636,7 @@ def run() -> None:
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
+                            recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate, gap_tolerance_ms=lfp_gap_tolerance_ms)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
