@@ -262,8 +262,6 @@ def run() -> None:
     else:
         io_class = NWBHDF5IO
 
-    logging.info(f"\nExporting session: {session_name}")
-
     job_json_files = [p for p in data_folder.glob('**/*.json') if "job" in p.name]
     job_dicts = []
     for job_json_file in job_json_files:
@@ -400,8 +398,11 @@ def run() -> None:
                     # load JSON and recordings
                     # we need lists because multiple groups are saved to different JSON files
                     recording_job_dicts = []
+                    group_names = []
                     for job_dict in job_dicts_session:
                         if recording_name in job_dict["recording_name"]:
+                            logging.info(f"Found {recording_name} in job dict: {job_dict['recording_name']}")
+                            group_names.append(recording_names)
                             recording_job_dicts.append(job_dict)
 
                     recording_lfp = None
@@ -457,10 +458,6 @@ def run() -> None:
                     if len(recording_job_dicts_sorted) > 1:
                         logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
                         recording = si.aggregate_channels(recordings)
-                        # probes_info get lost in aggregation, so we need to manually set them
-                        recording.annotate(
-                            probes_info=recordings[0].get_annotation("probes_info")
-                        )
                         # remove aggregation key property, since it causes typing issue in NWB export
                         if "aggregation_key" in recording.get_property_keys():
                             recording.delete_property("aggregation_key")
@@ -479,22 +476,34 @@ def run() -> None:
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
-                    # Add device and electrode group
-                    # For the NWB case, since the parser only read channel locations, the job-dispatch creates
-                    # a probe with the correct probe_device_name, so that neuroconv uses the right existing device
-                    if recording_job_dicts[0].get("probe_dict") is not None:
-                        logging.info(f"\tAdding probe information from job-dispatch metadata")
-                        probe_dict = recording_job_dicts[0]["probe_dict"]
-                        probe = pi.Probe.from_dict(probe_dict)
-                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
+                    logging.info(f"\tAdding probe information from recording metadata")
+                    probegroup = recording.get_probegroup()
+                    electrode_group_location = "unknown"
+
+                    if len(probegroup.probes) > 1:
+                        model_names = [probe.model_name for probe in probegroup.probes]
+                        model_descriptions = [probe.description for probe in probegroup.probes]
+                        probe_names = [probe.name for probe in probegroup.probes]
+                        model_name = model_names[0] if len(set(model_names)) == 1 else None
+                        model_description = model_descriptions[0] if len(set(model_descriptions)) == 1 else None
+                        probe_name = probe_names[0] if len(set(probe_names)) == 1 else None
+                        probe_manufacturers = [probe.manufacturer for probe in probegroup.probes]
+                        probe_manufacturer = probe_manufacturers[0] if len(set(probe_manufacturers)) == 1 else None
+                        serial_numbers = [probe.serial_number for probe in probegroup.probes]
+                        serial_number = serial_numbers[0] if len(set(serial_numbers)) == 1 else None
+                        electrode_group_locations = [
+                            probe.annotations.get("electrode_group_location", "unknown")
+                            for probe in probegroup.probes
+                        ]
+                        electrode_group_location = electrode_group_locations[0] if len(set(electrode_group_locations)) == 1 else None
                     else:
-                        logging.info(f"\tAdding probe information from recording metadata")
-                        probegroup = recording.get_probegroup()
-                        assert len(probegroup.probes) == 1, (
-                            "Grouping failed for this session. Each stream should be associated with a single probe!"
-                        )
                         probe = probegroup.probes[0]
-                        electrode_group_location = "unknown"
+                        model_name = probe.model_name
+                        model_description = probe.description
+                        probe_name = probe.name
+                        probe_manufacturer = probe.manufacturer
+                        serial_number = probe.serial_number
+                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
 
                     # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
@@ -510,24 +519,22 @@ def run() -> None:
                                 )
                                 # 1a. Apply fix for Quad Base probes to get probe device name from probe metadata instead of rig.json,
                                 # since rig.json has the same name for all shanks but we need to differentiate them
-                                model_name = probe.model_name
-                                model_description = probe.description
                                 if (model_name is not None and "Quad Base" in model_name) or \
                                     (model_description is not None and "Quad Base" in model_description):
-                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe.name}")
-                                    probe_device_name = probe.name
+                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe_name}")
+                                    probe_device_name = probe_name
                                 break
 
                     # 2. If no metadata devices, use probeinterface probes info from recording annotations
                     if probe_device_name is None:
-                        probe_device_name = probe.name or probe.model_name or "Probe"
+                        probe_device_name = probe_name or model_name or "Probe"
                         logging.info(f"\tAdding probe information from recording metadata")
 
                     # 3. Add probe to NWB
-                    probe_device_manufacturer = probe.manufacturer
-                    probe_model_name = probe.model_name
-                    probe_serial_number = probe.serial_number
-                    probe_description = probe.description
+                    probe_device_manufacturer = probe_manufacturer
+                    probe_model_name = model_name
+                    probe_serial_number = serial_number
+                    probe_description = model_description
                     probe_device_description = ""
 
                     if probe_model_name is not None:
@@ -665,6 +672,9 @@ def run() -> None:
                                 recording_lfp.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
 
                         channel_ids = recording_lfp.get_channel_ids()
+                        # keep track of the group names, since some preprocessing steps (e.g. channel selection)
+                        # re-attach the probe and reset the "group" property to integer values
+                        lfp_group_names = dict(zip(channel_ids, recording_lfp.get_channel_groups()))
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
                         # similar processing to allensdk
@@ -713,6 +723,13 @@ def run() -> None:
                                 overwrite=True,
                                 chunk_duration=lfp_save_chunk_duration
                             )
+
+                        # restore the group names: preprocessing steps that select channels re-attach the
+                        # probe and reset "group" to integers, which would make neuroconv create a spurious
+                        # "Device"/electrode group instead of linking to the probe device
+                        recording_lfp.set_channel_groups(
+                            [lfp_group_names[channel_id] for channel_id in recording_lfp.get_channel_ids()]
+                        )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
                         add_recording_to_nwbfile(
