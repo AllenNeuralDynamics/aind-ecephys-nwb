@@ -429,7 +429,7 @@ def run() -> None:
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
                             timestamps = np.load(timestamps_file)
-                            recording.set_times(timestamps, with_warning=False)
+                            recording.set_times(timestamps)
                         recordings.append(recording)
 
                         logging.info(f"\t\t{recording_job_dict['recording_name']}")
@@ -448,7 +448,7 @@ def run() -> None:
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
                                 timestamps_lfp = np.load(timestamps_file_lfp)
-                                recording_lfp.set_times(timestamps_lfp, with_warning=False)
+                                recording_lfp.set_times(timestamps_lfp)
                             recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
 
@@ -657,7 +657,7 @@ def run() -> None:
                                     - recording.get_times(sg_idx)[0]
                                     + lfp_period / 2
                                 )
-                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx, with_warning=False)
+                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
                             save_to_binary = True
                         else:
                             logging.info(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
@@ -704,7 +704,7 @@ def run() -> None:
                             recording_lfp_sub = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
                             for sg_idx in range(recording.get_num_segments()):
                                 lfp_times = recording_lfp.get_times(segment_index=sg_idx)
-                                recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx, with_warning=False)
+                                recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx)
                             recording_lfp = recording_lfp_sub
 
                         # high pass filter from allensdk
