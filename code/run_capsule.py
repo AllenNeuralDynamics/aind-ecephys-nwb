@@ -286,6 +286,8 @@ def run() -> None:
         block_ids = []
         recording_ids = []
         stream_names = []
+        # (block, recording) pairs that actually exist: not all streams/recordings are present in every block
+        existing_block_recordings = set()
         for recording_name in recording_names:
             if "group" in recording_name:
                 block_str = recording_name.split("_")[0]
@@ -296,6 +298,7 @@ def run() -> None:
                 recording_str = recording_name.split("_")[-1]
                 stream_name = "_".join(recording_name.split("_")[1:-1])
 
+            existing_block_recordings.add((block_str, recording_str))
             if block_str not in block_ids:
                 block_ids.append(block_str)
             if recording_str not in recording_ids:
@@ -327,6 +330,9 @@ def run() -> None:
         nwb_output_files = []
         for block_index, block_str in enumerate(block_ids):
             for segment_index, recording_str in enumerate(recording_ids):
+                if (block_str, recording_str) not in existing_block_recordings:
+                    logging.info(f"No recordings found for {block_str} - {recording_str}. Skipping")
+                    continue
                 # add recording/experiment id if needed
                 nwbfile = None
                 read_io = None
@@ -406,6 +412,9 @@ def run() -> None:
                     recording_lfp = None
                     recordings = []
                     recordings_lfp = []
+                    if len(recording_job_dicts) == 0:
+                        logging.info(f"\t{recording_name} not found in job dicts. Skipping")
+                        continue
                     logging.info(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
                     if len(recording_job_dicts) > 1:
                         # in case of multiple groups, sort by group names
@@ -739,7 +748,7 @@ def run() -> None:
                         )
                         electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
 
-                logging.info(f"Added {len(streams_to_process)} streams")
+                logging.info(f"Added {len(probe_device_names)} streams")
                 logging.info(f"Configuring {NWB_BACKEND} backend")
                 backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)
                 es_compressor = default_electrical_series_compressors[NWB_BACKEND]
