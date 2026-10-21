@@ -645,6 +645,9 @@ def run() -> None:
                             logging.info(
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
+                            lfp_start_times = [recording.get_start_time(sg_idx) for sg_idx in range(recording.get_num_segments())]
+                            # Reset times to avoid resample issues with gaps etc.
+                            recording.reset_times()
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
                             recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate, gap_tolerance_ms=lfp_gap_tolerance_ms)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
@@ -664,7 +667,7 @@ def run() -> None:
                                 ts_lfp = (
                                     np.arange(recording_lfp.get_num_samples(sg_idx))
                                     / recording_lfp.sampling_frequency
-                                    - recording.get_times(sg_idx)[0]
+                                    + lfp_start_times[sg_idx]
                                     + lfp_period / 2
                                 )
                                 # set after saving: times on the recording get pickled to every worker
