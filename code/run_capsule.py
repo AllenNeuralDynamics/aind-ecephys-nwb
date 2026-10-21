@@ -714,11 +714,10 @@ def run() -> None:
                             logging.info(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
                             recording_lfp_sub = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
                             for sg_idx in range(recording.get_num_segments()):
-                                if sg_idx in lfp_times_to_set:
-                                    lfp_times_to_set[sg_idx] = lfp_times_to_set[sg_idx][::TEMPORAL_SUBSAMPLING_FACTOR]
-                                else:
+                                lfp_times = lfp_times_to_set.get(sg_idx)
+                                if lfp_times is None:
                                     lfp_times = recording_lfp.get_times(segment_index=sg_idx)
-                                    recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx)
+                                lfp_times_to_set[sg_idx] = lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR]
                             recording_lfp = recording_lfp_sub
 
                         # high pass filter from allensdk
@@ -735,8 +734,8 @@ def run() -> None:
                                 overwrite=True,
                                 chunk_duration=lfp_save_chunk_duration,
                             )
-                            for sg_idx, ts_lfp in lfp_times_to_set.items():
-                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
+                        for sg_idx, ts_lfp in lfp_times_to_set.items():
+                            recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
 
                         # restore the group names: preprocessing steps that select channels re-attach the
                         # probe and reset "group" to integers, which would make neuroconv create a spurious
