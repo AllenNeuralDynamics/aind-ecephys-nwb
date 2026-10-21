@@ -44,7 +44,7 @@ warnings.filterwarnings("ignore")
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
-lfp_save_chunk_duration = "60s"
+lfp_save_chunk_duration = "30s"
 lfp_gap_tolerance_ms = 1
 
 # default compressors
@@ -437,7 +437,7 @@ def run() -> None:
                         timestamps_file = timestamps_folder / f"{recording_name}.npy"
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
-                            timestamps = np.load(timestamps_file)
+                            timestamps = np.load(timestamps_file, mmap_mode="r")
                             recording.set_times(timestamps)
                         recordings.append(recording)
 
@@ -456,7 +456,7 @@ def run() -> None:
                             timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
-                                timestamps_lfp = np.load(timestamps_file_lfp)
+                                timestamps_lfp = np.load(timestamps_file_lfp, mmap_mode="r")
                                 recording_lfp.set_times(timestamps_lfp)
                             recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
@@ -639,6 +639,7 @@ def run() -> None:
                             write_as="lfp",
                         )
 
+                        lfp_times_to_set = {}
                         if recording_lfp is None:
                             # Wide-band recording: filter and resample LFP
                             logging.info(
@@ -666,7 +667,8 @@ def run() -> None:
                                     - recording.get_times(sg_idx)[0]
                                     + lfp_period / 2
                                 )
-                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
+                                # set after saving: times on the recording get pickled to every worker
+                                lfp_times_to_set[sg_idx] = ts_lfp
                             save_to_binary = True
                         else:
                             logging.info(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
@@ -712,8 +714,10 @@ def run() -> None:
                             logging.info(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
                             recording_lfp_sub = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
                             for sg_idx in range(recording.get_num_segments()):
-                                lfp_times = recording_lfp.get_times(segment_index=sg_idx)
-                                recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx)
+                                lfp_times = lfp_times_to_set.get(sg_idx)
+                                if lfp_times is None:
+                                    lfp_times = recording_lfp.get_times(segment_index=sg_idx)
+                                lfp_times_to_set[sg_idx] = lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR]
                             recording_lfp = recording_lfp_sub
 
                         # high pass filter from allensdk
@@ -728,8 +732,10 @@ def run() -> None:
                                 folder=scratch_folder / f"{recording_name}-LFP",
                                 verbose=False,
                                 overwrite=True,
-                                chunk_duration=lfp_save_chunk_duration
+                                chunk_duration=lfp_save_chunk_duration,
                             )
+                        for sg_idx, ts_lfp in lfp_times_to_set.items():
+                            recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
 
                         # restore the group names: preprocessing steps that select channels re-attach the
                         # probe and reset "group" to integers, which would make neuroconv create a spurious
