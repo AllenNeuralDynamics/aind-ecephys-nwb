@@ -279,6 +279,10 @@ def run() -> None:
         # filter job_dicts for this session
         job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
         input_folder = job_dicts_session[0].get("input_folder")
+        # the metadata JSONs live in the session folder, which can differ from the raw data input folder
+        data_description_jsons = list(data_folder.glob("*ecephys*/data_description.json"))
+        if len(data_description_jsons) > 0:
+            input_folder = data_description_jsons[0].parent
 
         recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
 
@@ -354,8 +358,8 @@ def run() -> None:
                         try:
                             from aind_nwb_utils.utils import create_base_nwb_file
                             nwbfile = create_base_nwb_file(Path(input_folder))
-                        except:
-                            logging.info(f"Failed to create base NWB file from metadata.")
+                        except Exception as e:
+                            logging.info(f"Failed to create base NWB file from metadata: {e}")
 
                     if nwbfile is None:
                         from pynwb.testing.mock.file import mock_Subject
