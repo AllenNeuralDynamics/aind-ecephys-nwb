@@ -239,6 +239,7 @@ def run() -> None:
     logging.info(f"Spatial subsampling factor: {SPATIAL_CHANNEL_SUBSAMPLING_FACTOR}")
     logging.info(f"Highpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
     logging.info(f"Surface channel indices for agar probes: {SURFACE_CHANNEL_AGAR_PROBES_INDICES}")
+    logging.info(f"N_JOBS: {N_JOBS}")
 
     # find base NWB file
     nwb_files = [p for p in data_folder.iterdir() if p.name.endswith(".nwb") or p.name.endswith(".nwb.zarr")]
