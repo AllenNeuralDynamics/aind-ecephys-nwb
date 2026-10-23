@@ -44,7 +44,7 @@ warnings.filterwarnings("ignore")
 # filter and resample LFP
 lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
-lfp_save_chunk_duration = "30s"
+lfp_save_chunk_duration = "10s"
 lfp_gap_tolerance_ms = 1
 
 # default compressors
