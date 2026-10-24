@@ -487,6 +487,12 @@ def run() -> None:
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
+                    # neuroconv writes rel_x/rel_y from the "location" property, which a recording saved by
+                    # spikeinterface<0.105 keeps unchanged when its probe is replaced
+                    for rec in (recording, recording_lfp):
+                        if rec is not None and rec.has_probe():
+                            rec.set_property("location", rec.get_channel_locations())
+
                     logging.info(f"\tAdding probe information from recording metadata")
                     probegroup = recording.get_probegroup()
                     electrode_group_location = "unknown"
