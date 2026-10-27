@@ -65,7 +65,7 @@ def run() -> None:
         raise ValueError(f"Parameters file not found: {PARAMS_FILE}")
     with open(PARAMS_FILE, "r") as f:
         full_params = json.load(f)
-    nwb_ecephys_params = full_params["nwb"]["ecephys"]
+    nwb_ecephys_params = full_params["nwb_ecephys"]
     LOGGING = full_params.get("logging", None)
 
     NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
