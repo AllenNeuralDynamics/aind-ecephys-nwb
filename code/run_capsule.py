@@ -2,7 +2,6 @@
 
 import sys
 import warnings
-import argparse
 from pathlib import Path
 import numpy as np
 import os
@@ -55,138 +54,29 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-parser = argparse.ArgumentParser(description="Export Ecephys data to NWB")
-# positional arguments
-backend_group = parser.add_mutually_exclusive_group()
-backend_help = "NWB backend. It can be either 'hdf5' or 'zarr'."
-backend_group.add_argument(
-    "--backend", choices=["hdf5", "zarr"], default="zarr", help=backend_help
-)
-backend_group.add_argument("static_backend", nargs="?", help=backend_help)
-
-
-stub_group = parser.add_mutually_exclusive_group()
-stub_help = "Write a stub version for testing"
-stub_group.add_argument("--stub", action="store_true", help=stub_help)
-stub_group.add_argument("static_stub", nargs="?", default="false", help=stub_help)
-
-stub_seconds_group = parser.add_mutually_exclusive_group()
-stub_seconds_help = "Duration of stub recording"
-stub_seconds_group.add_argument("--stub-seconds", default=10, help=stub_seconds_help)
-stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_seconds_help)
-
-write_lfp_group = parser.add_mutually_exclusive_group()
-write_lfp_help = "Whether to write LFP electrical series"
-write_lfp_group.add_argument("--skip-lfp", action="store_true", help=write_lfp_help)
-write_lfp_group.add_argument("static_write_lfp", nargs="?", default="true", help=write_lfp_help)
-
-write_raw_group = parser.add_mutually_exclusive_group()
-write_raw_help = "Whether to write RAW electrical series"
-write_raw_group.add_argument("--write-raw", action="store_true", help=write_raw_help)
-write_raw_group.add_argument("static_write_raw", nargs="?", default="false", help=write_raw_help)
-
-lfp_temporal_subsampling_group = parser.add_mutually_exclusive_group()
-lfp_temporal_subsampling_help = (
-    "Ratio of input samples to output samples in time. Use 0 or 1 to keep all samples. Default is 2."
-)
-lfp_temporal_subsampling_group.add_argument("--lfp_temporal_factor", default=2, help=lfp_temporal_subsampling_help)
-lfp_temporal_subsampling_group.add_argument("static_lfp_temporal_factor", nargs="?", help=lfp_temporal_subsampling_help)
-
-lfp_spatial_subsampling_group = parser.add_mutually_exclusive_group()
-lfp_spatial_subsampling_help = (
-    "Controls number of channels to skip in spatial subsampling. Use 0 or 1 to keep all channels. Default is 4."
-)
-lfp_spatial_subsampling_group.add_argument("--lfp_spatial_factor", default=4, help=lfp_spatial_subsampling_help)
-lfp_spatial_subsampling_group.add_argument("static_lfp_spatial_factor", nargs="?", help=lfp_spatial_subsampling_help)
-
-lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
-lfp_highpass_filter_help = (
-    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1. (Use 0 to skip)."
-)
-lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0.1, help=lfp_highpass_filter_help)
-lfp_highpass_filter_group.add_argument("static_lfp_highpass_freq_min", nargs="?", help=lfp_highpass_filter_help)
-
-# common median referencing for probes in agar
-lfp_surface_channel_agar_group = parser.add_mutually_exclusive_group()
-lfp_surface_channel_help = "Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as JSON string where key is probe and value is surface channel (e.g. \"{'ProbeA': 350, 'ProbeB': 360}\")"
-lfp_surface_channel_agar_group.add_argument(
-    "--surface_channel_agar_probes_indices", help=lfp_surface_channel_help, default="", type=str
-)
-lfp_surface_channel_agar_group.add_argument(
-    "static_surface_channel_agar_probes_indices", help=lfp_surface_channel_help, nargs="?", type=str
-)
-
-parser.add_argument("--params", default=None, help="Path to the parameters file or JSON string. If given, it will override all other arguments.")
+PARAMS_FILE = Path("../params.json")
 
 
 def run() -> None:
     """Entrypoint for the NWB packaging ecephys capsule."""
     t_export_start = time.perf_counter()
 
-    args = parser.parse_args()
+    if not PARAMS_FILE.is_file():
+        raise ValueError(f"Parameters file not found: {PARAMS_FILE}")
+    with open(PARAMS_FILE, "r") as f:
+        full_params = json.load(f)
+    nwb_ecephys_params = full_params["nwb_ecephys"]
+    LOGGING = full_params.get("logging", None)
 
-    PARAMS = args.params
-
-    LOGGING = None
-
-    if PARAMS is not None:
-        try:
-            # try to parse the JSON string first to avoid file name too long error
-            nwb_ecephys_params = json.loads(PARAMS)
-        except json.JSONDecodeError:
-            if Path(PARAMS).is_file():
-                with open(PARAMS, "r") as f:
-                    nwb_ecephys_params = json.load(f)
-            else:
-                raise ValueError(f"Invalid parameters: {PARAMS} is not a valid JSON string or file path")
-
-        NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
-        STUB_TEST = nwb_ecephys_params.get("stub", False)
-        STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
-        WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
-        WRITE_RAW = nwb_ecephys_params.get("write_raw", False)
-        TEMPORAL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_temporal_factor", 2))
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_spatial_factor", 4))
-        HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
-    else:
-        with open("params.json", "r") as f:
-            nwb_ecephys_params = json.load(f)
-
-        NWB_BACKEND = args.static_backend or args.backend
-        stub = args.stub or args.static_stub
-        if args.stub:
-            STUB_TEST = True
-        else:
-            STUB_TEST = True if args.static_stub == "true" else False
-        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub_secods)
-
-        if args.skip_lfp:
-            WRITE_LFP = False
-        else:
-            WRITE_LFP = True if args.static_write_lfp == "true" else False
-
-        if args.write_raw:
-            WRITE_RAW = True
-        else:
-            WRITE_RAW = True if args.static_write_raw == "true" else False
-
-        TEMPORAL_SUBSAMPLING_FACTOR = args.static_lfp_temporal_factor or args.lfp_temporal_factor
-        TEMPORAL_SUBSAMPLING_FACTOR = int(TEMPORAL_SUBSAMPLING_FACTOR)
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = args.static_lfp_spatial_factor or args.lfp_spatial_factor
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
-        HIGHPASS_FILTER_FREQ_MIN = args.static_lfp_highpass_freq_min or args.lfp_highpass_freq_min
-        HIGHPASS_FILTER_FREQ_MIN = float(HIGHPASS_FILTER_FREQ_MIN)
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = (
-            args.static_surface_channel_agar_probes_indices or args.surface_channel_agar_probes_indices
-        )
-        if SURFACE_CHANNEL_AGAR_PROBES_INDICES != "":
-            SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
-        else:
-            SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
-
-    # TODO: temporary - remove from params.json when logging is distributed by pipeline
-    LOGGING = nwb_ecephys_params.pop("logging", None)
+    NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
+    STUB_TEST = nwb_ecephys_params.get("stub", False)
+    STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
+    WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
+    WRITE_RAW = nwb_ecephys_params.get("write_raw", False)
+    TEMPORAL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_temporal_factor", 2))
+    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_spatial_factor", 4))
+    HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
+    SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
 
     # Use CO_CPUS/N_JOBS_EXT env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
@@ -205,15 +95,7 @@ def run() -> None:
             import log_schema
 
             pipeline_name = LOGGING.get("pipeline_name", "AIND Ephys Pipeline")
-            acquisition_name = LOGGING.get("acquisition_name", None)
-
-            if acquisition_name is None:
-                data_description_json = list(data_folder.glob("**/data_description.json"))
-                if len(data_description_json) > 0:
-                    data_description_json = data_description_json[0]
-                    with open(data_description_json, "r") as f:
-                        data_description = json.load(f)
-                    acquisition_name = data_description["name"]
+            acquisition_name = LOGGING.get("acquisition_name", "unknown")
 
             config = LOGGING.get("logging_cfg")
             if config is not None and len(config) == 0:
