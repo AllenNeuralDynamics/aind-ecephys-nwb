@@ -41,9 +41,10 @@ warnings.filterwarnings("ignore")
 
 
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
+lfp_margin_ms = 500
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, margin_ms=lfp_margin_ms, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
-lfp_save_chunk_duration = "10s"
+lfp_save_chunk_duration = "30s"
 lfp_gap_tolerance_ms = 1
 
 # default compressors
@@ -618,7 +619,12 @@ def run() -> None:
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
                             logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN, ignore_low_freq_error=True)
+                            recording_lfp = spre.highpass_filter(
+                                recording_lfp,
+                                freq_min=HIGHPASS_FILTER_FREQ_MIN,
+                                margin_ms=lfp_margin_ms,
+                                ignore_low_freq_error=True
+                            )
 
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
