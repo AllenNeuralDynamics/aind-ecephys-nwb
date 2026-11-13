@@ -2,7 +2,6 @@
 
 import sys
 import warnings
-import argparse
 from pathlib import Path
 import numpy as np
 import os
@@ -38,22 +37,15 @@ from zarr.codecs import BloscCodec
 
 from aind_nwb_utils.utils import get_ephys_devices_from_metadata
 
-# AIND
-try:
-    from aind_log_utils import log
-
-    HAVE_AIND_LOG_UTILS = True
-except ImportError:
-    HAVE_AIND_LOG_UTILS = False
-
-
 warnings.filterwarnings("ignore")
 
 
 # filter and resample LFP
-lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, ignore_low_freq_error=True)
+lfp_margin_ms = 500
+lfp_filter_kwargs = dict(freq_min=0.5, freq_max=500, margin_ms=lfp_margin_ms, ignore_low_freq_error=True)
 lfp_sampling_rate = 2500
-lfp_save_chunk_duration = "60s"
+lfp_save_chunk_duration = "30s"
+lfp_gap_tolerance_ms = 1
 
 # default compressors
 default_electrical_series_compressors = dict(hdf5="gzip", zarr=BloscCodec(cname="zstd", clevel=9, shuffle="bitshuffle"))
@@ -63,128 +55,29 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
-parser = argparse.ArgumentParser(description="Export Ecephys data to NWB")
-# positional arguments
-backend_group = parser.add_mutually_exclusive_group()
-backend_help = "NWB backend. It can be either 'hdf5' or 'zarr'."
-backend_group.add_argument(
-    "--backend", choices=["hdf5", "zarr"], default="zarr", help=backend_help
-)
-backend_group.add_argument("static_backend", nargs="?", help=backend_help)
+PARAMS_FILE = Path("../params.json")
 
 
-stub_group = parser.add_mutually_exclusive_group()
-stub_help = "Write a stub version for testing"
-stub_group.add_argument("--stub", action="store_true", help=stub_help)
-stub_group.add_argument("static_stub", nargs="?", default="false", help=stub_help)
-
-stub_seconds_group = parser.add_mutually_exclusive_group()
-stub_seconds_help = "Duration of stub recording"
-stub_seconds_group.add_argument("--stub-seconds", default=10, help=stub_seconds_help)
-stub_seconds_group.add_argument("static_stub_seconds", nargs="?", default="10", help=stub_seconds_help)
-
-write_lfp_group = parser.add_mutually_exclusive_group()
-write_lfp_help = "Whether to write LFP electrical series"
-write_lfp_group.add_argument("--skip-lfp", action="store_true", help=write_lfp_help)
-write_lfp_group.add_argument("static_write_lfp", nargs="?", default="true", help=write_lfp_help)
-
-write_raw_group = parser.add_mutually_exclusive_group()
-write_raw_help = "Whether to write RAW electrical series"
-write_raw_group.add_argument("--write-raw", action="store_true", help=write_raw_help)
-write_raw_group.add_argument("static_write_raw", nargs="?", default="false", help=write_raw_help)
-
-lfp_temporal_subsampling_group = parser.add_mutually_exclusive_group()
-lfp_temporal_subsampling_help = (
-    "Ratio of input samples to output samples in time. Use 0 or 1 to keep all samples. Default is 2."
-)
-lfp_temporal_subsampling_group.add_argument("--lfp_temporal_factor", default=2, help=lfp_temporal_subsampling_help)
-lfp_temporal_subsampling_group.add_argument("static_lfp_temporal_factor", nargs="?", help=lfp_temporal_subsampling_help)
-
-lfp_spatial_subsampling_group = parser.add_mutually_exclusive_group()
-lfp_spatial_subsampling_help = (
-    "Controls number of channels to skip in spatial subsampling. Use 0 or 1 to keep all channels. Default is 4."
-)
-lfp_spatial_subsampling_group.add_argument("--lfp_spatial_factor", default=4, help=lfp_spatial_subsampling_help)
-lfp_spatial_subsampling_group.add_argument("static_lfp_spatial_factor", nargs="?", help=lfp_spatial_subsampling_help)
-
-lfp_highpass_filter_group = parser.add_mutually_exclusive_group()
-lfp_highpass_filter_help = (
-    "Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1. (Use 0 to skip)."
-)
-lfp_highpass_filter_group.add_argument("--lfp_highpass_freq_min", default=0.1, help=lfp_highpass_filter_help)
-lfp_highpass_filter_group.add_argument("static_lfp_highpass_freq_min", nargs="?", help=lfp_highpass_filter_help)
-
-# common median referencing for probes in agar
-lfp_surface_channel_agar_group = parser.add_mutually_exclusive_group()
-lfp_surface_channel_help = "Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as JSON string where key is probe and value is surface channel (e.g. \"{'ProbeA': 350, 'ProbeB': 360}\")"
-lfp_surface_channel_agar_group.add_argument(
-    "--surface_channel_agar_probes_indices", help=lfp_surface_channel_help, default="", type=str
-)
-lfp_surface_channel_agar_group.add_argument(
-    "static_surface_channel_agar_probes_indices", help=lfp_surface_channel_help, nargs="?", type=str
-)
-
-parser.add_argument("--params", default=None, help="Path to the parameters file or JSON string. If given, it will override all other arguments.")
-
-
-if __name__ == "__main__":
+def run() -> None:
+    """Entrypoint for the NWB packaging ecephys capsule."""
     t_export_start = time.perf_counter()
 
-    args = parser.parse_args()
+    if not PARAMS_FILE.is_file():
+        raise ValueError(f"Parameters file not found: {PARAMS_FILE}")
+    with open(PARAMS_FILE, "r") as f:
+        full_params = json.load(f)
+    nwb_ecephys_params = full_params["nwb_ecephys"]
+    LOGGING = full_params.get("logging", None)
 
-    PARAMS = args.params
-
-    if PARAMS is not None:
-        try:
-            # try to parse the JSON string first to avoid file name too long error
-            nwb_ecephys_params = json.loads(PARAMS)
-        except json.JSONDecodeError:
-            if Path(PARAMS).is_file():
-                with open(PARAMS, "r") as f:
-                    nwb_ecephys_params = json.load(f)
-            else:
-                raise ValueError(f"Invalid parameters: {PARAMS} is not a valid JSON string or file path")
-        NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
-        STUB_TEST = nwb_ecephys_params.get("stub", False)
-        STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
-        WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
-        WRITE_RAW = nwb_ecephys_params.get("write_raw", False)
-        TEMPORAL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_temporal_factor", 2))
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_spatial_factor", 4))
-        HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
-    else:
-        NWB_BACKEND = args.static_backend or args.backend
-        stub = args.stub or args.static_stub
-        if args.stub:
-            STUB_TEST = True
-        else:
-            STUB_TEST = True if args.static_stub == "true" else False
-        STUB_SECONDS = float(args.stub_seconds) or float(args.static_stub_secods)
-
-        if args.skip_lfp:
-            WRITE_LFP = False
-        else:
-            WRITE_LFP = True if args.static_write_lfp == "true" else False
-
-        if args.write_raw:
-            WRITE_RAW = True
-        else:
-            WRITE_RAW = True if args.static_write_raw == "true" else False
-
-        TEMPORAL_SUBSAMPLING_FACTOR = args.static_lfp_temporal_factor or args.lfp_temporal_factor
-        TEMPORAL_SUBSAMPLING_FACTOR = int(TEMPORAL_SUBSAMPLING_FACTOR)
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = args.static_lfp_spatial_factor or args.lfp_spatial_factor
-        SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(SPATIAL_CHANNEL_SUBSAMPLING_FACTOR)
-        HIGHPASS_FILTER_FREQ_MIN = args.static_lfp_highpass_freq_min or args.lfp_highpass_freq_min
-        HIGHPASS_FILTER_FREQ_MIN = float(HIGHPASS_FILTER_FREQ_MIN)
-        SURFACE_CHANNEL_AGAR_PROBES_INDICES = (
-            args.static_surface_channel_agar_probes_indices or args.surface_channel_agar_probes_indices
-        )
-        if SURFACE_CHANNEL_AGAR_PROBES_INDICES != "":
-            SURFACE_CHANNEL_AGAR_PROBES_INDICES = json.loads(SURFACE_CHANNEL_AGAR_PROBES_INDICES)
-        else:
-            SURFACE_CHANNEL_AGAR_PROBES_INDICES = None
+    NWB_BACKEND = nwb_ecephys_params.get("backend", "zarr")
+    STUB_TEST = nwb_ecephys_params.get("stub", False)
+    STUB_SECONDS = float(nwb_ecephys_params.get("stub_seconds", 10))
+    WRITE_LFP = nwb_ecephys_params.get("write_lfp", True)
+    WRITE_RAW = nwb_ecephys_params.get("write_raw", False)
+    TEMPORAL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_temporal_factor", 2))
+    SPATIAL_CHANNEL_SUBSAMPLING_FACTOR = int(nwb_ecephys_params.get("lfp_spatial_factor", 4))
+    HIGHPASS_FILTER_FREQ_MIN = float(nwb_ecephys_params.get("lfp_highpass_freq_min", 0.1))
+    SURFACE_CHANNEL_AGAR_PROBES_INDICES = nwb_ecephys_params.get("surface_channel_agar_probes_indices", None)
 
     # Use CO_CPUS/N_JOBS_EXT env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
@@ -192,39 +85,32 @@ if __name__ == "__main__":
     job_kwargs = dict(n_jobs=N_JOBS, progress_bar=False, mp_context="spawn")
     si.set_global_job_kwargs(**job_kwargs)
 
-    if HAVE_AIND_LOG_UTILS:
-        # find raw data
-        ecephys_folders = [
-            p
-            for p in data_folder.iterdir()
-            if p.is_dir()
-            and ("ecephys" in p.name or "behavior" in p.name)
-            and ("sorted" not in p.name and "nwb" not in p.name)
-            and "ecephys_clipped" not in p.name
-        ]
-        ecephys_session_folder = ecephys_folders[0]
-        session_name = ecephys_session_folder.name
-        # look for subject.json and data_description.json files
-        subject_json = ecephys_session_folder / "subject.json"
-        subject_id = "undefined"
-        if subject_json.is_file():
-            subject_data = json.load(open(subject_json, "r"))
-            subject_id = subject_data["subject_id"]
-
-        data_description_json = ecephys_session_folder / "data_description.json"
-        session_name = "undefined"
-        if data_description_json.is_file():
-            data_description = json.load(open(data_description_json, "r"))
-            session_name = data_description["name"]
-
-        log.setup_logging(
-            "NWB Packaging Ecephys",
-            subject_id=subject_id,
-            asset_name=session_name,
-        )
+    # setup logging before any other logging call
+    if LOGGING is None:
+        logging.basicConfig(level="INFO", stream=sys.stdout, format="%(message)s")
     else:
-        logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(message)s")
+        if LOGGING["package"] == "logging":
+            logging_cfg = LOGGING.get("logging_cfg", {})
+            logging.basicConfig(stream=sys.stdout, **logging_cfg)
+        elif LOGGING["package"] == "log-schema":
+            import log_schema
 
+            pipeline_name = LOGGING.get("pipeline_name", "AIND Ephys Pipeline")
+            acquisition_name = LOGGING.get("acquisition_name", "unknown")
+
+            config = LOGGING.get("logging_cfg")
+            if config is not None and len(config) == 0:
+                config = None
+            log_schema.setup_logging(
+                config=config,
+                model={
+                    "pipeline_name": pipeline_name,
+                    "acquisition_name": acquisition_name,
+                    "process_name": "NWB Packaging Ecephys"
+                }
+            )
+
+    logging.info("Begin processing...", extra={"event_type": "stage_start"})
     logging.info("\n\nNWB EXPORT ECEPHYS")
 
     logging.info(f"Running NWB conversion with the following parameters:")
@@ -276,6 +162,10 @@ if __name__ == "__main__":
         # filter job_dicts for this session
         job_dicts_session = [jd for jd in job_dicts if jd["session_name"] == session_name]
         input_folder = job_dicts_session[0].get("input_folder")
+        # the metadata JSONs live in the session folder, which can differ from the raw data input folder
+        data_description_jsons = list(data_folder.glob("*ecephys*/data_description.json"))
+        if len(data_description_jsons) > 0:
+            input_folder = data_description_jsons[0].parent
 
         recording_names = [job_dict["recording_name"] for job_dict in job_dicts_session]
 
@@ -283,6 +173,8 @@ if __name__ == "__main__":
         block_ids = []
         recording_ids = []
         stream_names = []
+        # (block, recording) pairs that actually exist: not all streams/recordings are present in every block
+        existing_block_recordings = set()
         for recording_name in recording_names:
             if "group" in recording_name:
                 block_str = recording_name.split("_")[0]
@@ -293,6 +185,7 @@ if __name__ == "__main__":
                 recording_str = recording_name.split("_")[-1]
                 stream_name = "_".join(recording_name.split("_")[1:-1])
 
+            existing_block_recordings.add((block_str, recording_str))
             if block_str not in block_ids:
                 block_ids.append(block_str)
             if recording_str not in recording_ids:
@@ -324,6 +217,9 @@ if __name__ == "__main__":
         nwb_output_files = []
         for block_index, block_str in enumerate(block_ids):
             for segment_index, recording_str in enumerate(recording_ids):
+                if (block_str, recording_str) not in existing_block_recordings:
+                    logging.info(f"No recordings found for {block_str} - {recording_str}. Skipping")
+                    continue
                 # add recording/experiment id if needed
                 nwbfile = None
                 read_io = None
@@ -345,8 +241,8 @@ if __name__ == "__main__":
                         try:
                             from aind_nwb_utils.utils import create_base_nwb_file
                             nwbfile = create_base_nwb_file(Path(input_folder))
-                        except:
-                            logging.info(f"Failed to create base NWB file from metadata.")
+                        except Exception as e:
+                            logging.info(f"Failed to create base NWB file from metadata: {e}")
 
                     if nwbfile is None:
                         from pynwb.testing.mock.file import mock_Subject
@@ -393,13 +289,19 @@ if __name__ == "__main__":
                     # load JSON and recordings
                     # we need lists because multiple groups are saved to different JSON files
                     recording_job_dicts = []
+                    group_names = []
                     for job_dict in job_dicts_session:
                         if recording_name in job_dict["recording_name"]:
+                            logging.info(f"Found {recording_name} in job dict: {job_dict['recording_name']}")
+                            group_names.append(recording_names)
                             recording_job_dicts.append(job_dict)
 
                     recording_lfp = None
                     recordings = []
                     recordings_lfp = []
+                    if len(recording_job_dicts) == 0:
+                        logging.info(f"\t{recording_name} not found in job dicts. Skipping")
+                        continue
                     logging.info(f"\tLoading {recording_name} from {len(recording_job_dicts)} JSON files")
                     if len(recording_job_dicts) > 1:
                         # in case of multiple groups, sort by group names
@@ -422,8 +324,8 @@ if __name__ == "__main__":
                         timestamps_file = timestamps_folder / f"{recording_name}.npy"
                         if timestamps_file.is_file():
                             logging.info(f"\tSetting synced timestamps from {timestamps_file}")
-                            timestamps = np.load(timestamps_file)
-                            recording.set_times(timestamps, with_warning=False)
+                            timestamps = np.load(timestamps_file, mmap_mode="r")
+                            recording.set_times(timestamps)
                         recordings.append(recording)
 
                         logging.info(f"\t\t{recording_job_dict['recording_name']}")
@@ -441,8 +343,8 @@ if __name__ == "__main__":
                             timestamps_file_lfp = timestamps_folder / f"{recording_name}_lfp.npy"
                             if timestamps_file_lfp.is_file():
                                 logging.info(f"\tSetting synced LFP timestamps from {timestamps_file_lfp}")
-                                timestamps_lfp = np.load(timestamps_file_lfp)
-                                recording_lfp.set_times(timestamps_lfp, with_warning=False)
+                                timestamps_lfp = np.load(timestamps_file_lfp, mmap_mode="r")
+                                recording_lfp.set_times(timestamps_lfp)
                             recordings_lfp.append(recording_lfp)
                             logging.info(f"\t\t{recording_lfp}")
 
@@ -450,10 +352,6 @@ if __name__ == "__main__":
                     if len(recording_job_dicts_sorted) > 1:
                         logging.info(f"\t\tAggregating channels from {len(recordings)} groups")
                         recording = si.aggregate_channels(recordings)
-                        # probes_info get lost in aggregation, so we need to manually set them
-                        recording.annotate(
-                            probes_info=recordings[0].get_annotation("probes_info")
-                        )
                         # remove aggregation key property, since it causes typing issue in NWB export
                         if "aggregation_key" in recording.get_property_keys():
                             recording.delete_property("aggregation_key")
@@ -472,22 +370,40 @@ if __name__ == "__main__":
                             end_frame = int(STUB_SECONDS * recording_lfp.sampling_frequency)
                             recording_lfp = recording_lfp.frame_slice(start_frame=0, end_frame=end_frame)
 
-                    # Add device and electrode group
-                    # For the NWB case, since the parser only read channel locations, the job-dispatch creates
-                    # a probe with the correct probe_device_name, so that neuroconv uses the right existing device
-                    if recording_job_dicts[0].get("probe_dict") is not None:
-                        logging.info(f"\tAdding probe information from job-dispatch metadata")
-                        probe_dict = recording_job_dicts[0]["probe_dict"]
-                        probe = pi.Probe.from_dict(probe_dict)
-                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
+                    # neuroconv writes rel_x/rel_y from the "location" property, which a recording saved by
+                    # spikeinterface<0.105 keeps unchanged when its probe is replaced
+                    for rec in (recording, recording_lfp):
+                        if rec is not None and rec.has_probe():
+                            rec.set_property("location", rec.get_channel_locations())
+
+                    logging.info(f"\tAdding probe information from recording metadata")
+                    probegroup = recording.get_probegroup()
+                    electrode_group_location = "unknown"
+
+                    if len(probegroup.probes) > 1:
+                        model_names = [probe.model_name for probe in probegroup.probes]
+                        model_descriptions = [probe.description for probe in probegroup.probes]
+                        probe_names = [probe.name for probe in probegroup.probes]
+                        model_name = model_names[0] if len(set(model_names)) == 1 else None
+                        model_description = model_descriptions[0] if len(set(model_descriptions)) == 1 else None
+                        probe_name = probe_names[0] if len(set(probe_names)) == 1 else None
+                        probe_manufacturers = [probe.manufacturer for probe in probegroup.probes]
+                        probe_manufacturer = probe_manufacturers[0] if len(set(probe_manufacturers)) == 1 else None
+                        serial_numbers = [probe.serial_number for probe in probegroup.probes]
+                        serial_number = serial_numbers[0] if len(set(serial_numbers)) == 1 else None
+                        electrode_group_locations = [
+                            probe.annotations.get("electrode_group_location", "unknown")
+                            for probe in probegroup.probes
+                        ]
+                        electrode_group_location = electrode_group_locations[0] if len(set(electrode_group_locations)) == 1 else None
                     else:
-                        logging.info(f"\tAdding probe information from recording metadata")
-                        probegroup = recording.get_probegroup()
-                        assert len(probegroup.probes) == 1, (
-                            "Grouping failed for this session. Each stream should be associated with a single probe!"
-                        )
                         probe = probegroup.probes[0]
-                        electrode_group_location = "unknown"
+                        model_name = probe.model_name
+                        model_description = probe.description
+                        probe_name = probe.name
+                        probe_manufacturer = probe.manufacturer
+                        serial_number = probe.serial_number
+                        electrode_group_location = probe.annotations.get("electrode_group_location", "unknown")
 
                     # 1. Look for AIND devices in metadata and use them if they match the stream name
                     probe_device_name = None
@@ -503,24 +419,22 @@ if __name__ == "__main__":
                                 )
                                 # 1a. Apply fix for Quad Base probes to get probe device name from probe metadata instead of rig.json,
                                 # since rig.json has the same name for all shanks but we need to differentiate them
-                                model_name = probe.model_name
-                                model_description = probe.description
                                 if (model_name is not None and "Quad Base" in model_name) or \
                                     (model_description is not None and "Quad Base" in model_description):
-                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe.name}")
-                                    probe_device_name = probe.name
+                                    logging.info(f"Detected Quad Base: changing name from {probe_device_name} to {probe_name}")
+                                    probe_device_name = probe_name
                                 break
 
                     # 2. If no metadata devices, use probeinterface probes info from recording annotations
                     if probe_device_name is None:
-                        probe_device_name = probe.name or probe.model_name or "Probe"
+                        probe_device_name = probe_name or model_name or "Probe"
                         logging.info(f"\tAdding probe information from recording metadata")
 
                     # 3. Add probe to NWB
-                    probe_device_manufacturer = probe.manufacturer
-                    probe_model_name = probe.model_name
-                    probe_serial_number = probe.serial_number
-                    probe_description = probe.description
+                    probe_device_manufacturer = probe_manufacturer
+                    probe_model_name = model_name
+                    probe_serial_number = serial_number
+                    probe_description = model_description
                     probe_device_description = ""
 
                     if probe_model_name is not None:
@@ -618,13 +532,17 @@ if __name__ == "__main__":
                             write_as="lfp",
                         )
 
+                        lfp_times_to_set = {}
                         if recording_lfp is None:
                             # Wide-band recording: filter and resample LFP
                             logging.info(
                                 f"\tAdding LFP data for stream {stream_name} from wide-band signal - segment {segment_index}"
                             )
+                            lfp_start_times = [recording.get_start_time(sg_idx) for sg_idx in range(recording.get_num_segments())]
+                            # Reset times to avoid resample issues with gaps etc.
+                            recording.reset_times()
                             recording_lfp = spre.bandpass_filter(recording, **lfp_filter_kwargs)
-                            recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate)
+                            recording_lfp = spre.resample(recording_lfp, lfp_sampling_rate, gap_tolerance_ms=lfp_gap_tolerance_ms)
                             recording_lfp = spre.astype(recording_lfp, dtype="int16")
 
                             # there is a bug in with sample mismatches for the last chunk if num_samples not divisible by chunk_size
@@ -642,10 +560,11 @@ if __name__ == "__main__":
                                 ts_lfp = (
                                     np.arange(recording_lfp.get_num_samples(sg_idx))
                                     / recording_lfp.sampling_frequency
-                                    - recording.get_times(sg_idx)[0]
+                                    + lfp_start_times[sg_idx]
                                     + lfp_period / 2
                                 )
-                                recording_lfp.set_times(ts_lfp, segment_index=sg_idx, with_warning=False)
+                                # set after saving: times on the recording get pickled to every worker
+                                lfp_times_to_set[sg_idx] = ts_lfp
                             save_to_binary = True
                         else:
                             logging.info(f"\tAdding LFP data for {stream_name} from LFP stream - segment {segment_index}")
@@ -658,6 +577,9 @@ if __name__ == "__main__":
                                 recording_lfp.set_channel_groups([f"{probe_device_name}_group{g}" for g in channel_groups])
 
                         channel_ids = recording_lfp.get_channel_ids()
+                        # keep track of the group names, since some preprocessing steps (e.g. channel selection)
+                        # re-attach the probe and reset the "group" property to integer values
+                        lfp_group_names = dict(zip(channel_ids, recording_lfp.get_channel_groups()))
 
                         # re-reference only for agar - subtract median of channels out of brain using surface channel index arg
                         # similar processing to allensdk
@@ -688,14 +610,21 @@ if __name__ == "__main__":
                             logging.info(f"\t\tTemporal subsampling factor: {TEMPORAL_SUBSAMPLING_FACTOR}")
                             recording_lfp_sub = spre.decimate(recording_lfp, TEMPORAL_SUBSAMPLING_FACTOR)
                             for sg_idx in range(recording.get_num_segments()):
-                                lfp_times = recording_lfp.get_times(segment_index=sg_idx)
-                                recording_lfp_sub.set_times(lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR], segment_index=sg_idx, with_warning=False)
+                                lfp_times = lfp_times_to_set.get(sg_idx)
+                                if lfp_times is None:
+                                    lfp_times = recording_lfp.get_times(segment_index=sg_idx)
+                                lfp_times_to_set[sg_idx] = lfp_times[::TEMPORAL_SUBSAMPLING_FACTOR]
                             recording_lfp = recording_lfp_sub
 
                         # high pass filter from allensdk
                         if HIGHPASS_FILTER_FREQ_MIN > 0:
                             logging.info(f"\t\tHighpass filter frequency: {HIGHPASS_FILTER_FREQ_MIN}")
-                            recording_lfp = spre.highpass_filter(recording_lfp, freq_min=HIGHPASS_FILTER_FREQ_MIN, ignore_low_freq_error=True)
+                            recording_lfp = spre.highpass_filter(
+                                recording_lfp,
+                                freq_min=HIGHPASS_FILTER_FREQ_MIN,
+                                margin_ms=lfp_margin_ms,
+                                ignore_low_freq_error=True
+                            )
 
                         # For streams without a separate LFP, save to binary to speed up conversion later
                         if save_to_binary:
@@ -704,8 +633,17 @@ if __name__ == "__main__":
                                 folder=scratch_folder / f"{recording_name}-LFP",
                                 verbose=False,
                                 overwrite=True,
-                                chunk_duration=lfp_save_chunk_duration
+                                chunk_duration=lfp_save_chunk_duration,
                             )
+                        for sg_idx, ts_lfp in lfp_times_to_set.items():
+                            recording_lfp.set_times(ts_lfp, segment_index=sg_idx)
+
+                        # restore the group names: preprocessing steps that select channels re-attach the
+                        # probe and reset "group" to integers, which would make neuroconv create a spurious
+                        # "Device"/electrode group instead of linking to the probe device
+                        recording_lfp.set_channel_groups(
+                            [lfp_group_names[channel_id] for channel_id in recording_lfp.get_channel_ids()]
+                        )
 
                         logging.info(f"\tAdding LFP recording {recording_lfp}")
                         add_recording_to_nwbfile(
@@ -717,7 +655,7 @@ if __name__ == "__main__":
                         )
                         electrical_series_to_configure.append(add_electrical_lfp_series_kwargs["es_key"])
 
-                logging.info(f"Added {len(streams_to_process)} streams")
+                logging.info(f"Added {len(probe_device_names)} streams")
                 logging.info(f"Configuring {NWB_BACKEND} backend")
                 backend_configuration = get_default_backend_configuration(nwbfile=nwbfile, backend=NWB_BACKEND)
                 es_compressor = default_electrical_series_compressors[NWB_BACKEND]
@@ -754,3 +692,12 @@ if __name__ == "__main__":
     t_export_end = time.perf_counter()
     elapsed_time_export = np.round(t_export_end - t_export_start, 2)
     logging.info(f"NWB EXPORT ECEPHYS time: {elapsed_time_export}s")
+    logging.info("Pipeline stage completed", extra={"event_type": "stage_complete"})
+
+
+if __name__ == "__main__":
+    try:
+        run()
+    except Exception as e:
+        logging.exception("Pipeline stage failed", extra={"event_type": "stage_error"})
+        raise

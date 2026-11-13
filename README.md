@@ -19,26 +19,10 @@ If the input data is already in NWB format, the capsule will simply start from t
 
 ### Parameters
 
-The `code/run` script takes the following arguments:
-
-```bash
-  --backend {pynwb,hdmf}
-                        Backend to use for NWB writing (if pipeline 'input' is not NWB)
-  --stub                Write a stub version for testing
-  --stub-seconds STUB_SECONDS
-                        Duration of stub recording
-  --skip-lfp            Whether to write LFP electrical series
-  --write-raw           Whether to write RAW electrical series
-  --lfp_temporal_factor LFP_TEMPORAL_FACTOR
-                        Ratio of input samples to output samples in time. Use 0 or 1 to keep all samples. Default is 2.
-  --lfp_spatial_factor LFP_SPATIAL_FACTOR
-                        Controls number of channels to skip in spatial subsampling. Use 0 or 1 to keep all channels. Default is 4.
-  --lfp_highpass_freq_min LFP_HIGHPASS_FREQ_MIN
-                        Cutoff frequency for highpass filter to apply to the LFP recorsings. Default is 0.1 Hz. Use 0 to skip filtering.
-  --surface_channel_agar_probes_indices SURFACE_CHANNEL_AGAR_PROBES_INDICES
-                        Index of surface channel (e.g. index 0 corresponds to channel 1) of probe for common median referencing for probes in agar. Pass in as JSON
-                        string where key is probe and value is surface channel (e.g. "{'ProbeA': 350, 'ProbeB': 360}")
-```
+Parameters are read from a `params.json` file that must be in the root folder of the capsule (next to `code/`, i.e. `../params.json` from `code/`): the `nwb.ecephys` section plus the top-level `logging` section.
+Keys: `backend` (`zarr`|`hdf5`, default `zarr`), `stub` (false), `stub_seconds` (10), `write_lfp` (true), `write_raw` (false),
+`lfp_temporal_factor` (2), `lfp_spatial_factor` (4), `lfp_highpass_freq_min` (0.1; 0 to skip),
+`surface_channel_agar_probes_indices` (dict of probe name to surface channel index, for common median referencing of probes in agar).
 
 ### Output
 
