@@ -55,6 +55,10 @@ data_folder = Path("../data/")
 scratch_folder = Path("../scratch/")
 results_folder = Path("../results/")
 
+INTER_SAMPLE_SHIFT_DESCRIPTION = (
+    "Sampling time offset of the channel within a sample period (ADC multiplexing), as a fraction of a sample."
+)
+
 PARAMS_FILE = Path("../params.json")
 
 
@@ -267,6 +271,16 @@ def run() -> None:
                             session_id=session_id,
                         )
 
+                if read_io is None:
+                    if nwbfile.experiment_description is None:
+                        nwbfile.experiment_description = (
+                            "Extracellular electrophysiology recording processed with the AIND ephys pipeline."
+                        )
+                    if nwbfile.keywords is None:
+                        nwbfile.keywords = ["extracellular electrophysiology", "spike sorting"]
+                    if nwbfile.subject is not None and nwbfile.subject.description is None:
+                        nwbfile.subject.description = f"Experimental subject {nwbfile.subject.subject_id}"
+
                 # add suffix for stub test
                 if STUB_TEST:
                     nwb_file_name = f"{nwb_file_name}_stub"
@@ -464,6 +478,7 @@ def run() -> None:
                     electrode_metadata = dict(
                         Ecephys=dict(
                             Device=[dict(name=probe_device_name)],
+                            Electrodes=[dict(name="inter_sample_shift", description=INTER_SAMPLE_SHIFT_DESCRIPTION)],
                         )
                     )
                     # Add channel properties (group_name property to associate electrodes with group)
